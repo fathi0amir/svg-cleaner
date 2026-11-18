@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from svg_cleaner import clean
 from svg_cleaner.config import CleanConfig, load_config_file
 from svg_cleaner.document import load_svg, localname, parse_style
 from svg_cleaner.errors import SvgCleanerError
@@ -195,6 +196,17 @@ def test_smil_timing_references_keep_their_ids():
     assert renamed is not None
     # shortening must rewrite the timing reference as well
     assert find(root, "animate").get("begin") == f"{renamed}.click; 2s"
+
+
+def test_clean_only_and_skip():
+    svg = (
+        f'<svg xmlns="{SVG}"><rect width="1" height="1" display="none"/>'
+        '<rect width="2" height="2"/></svg>'
+    )
+    result = clean(svg, CleanConfig(), skip=["visibility"])
+    assert 'display="none"' in result.svg
+    result2 = clean(svg, CleanConfig(), only=["structure"])
+    assert 'display="none"' in result2.svg
 
 
 def test_cleanup_ids_bails_out_when_a_stylesheet_remains():

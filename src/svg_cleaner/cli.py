@@ -26,6 +26,10 @@ CONFIG_FLAGS = (
     "trim_clip",
     "trim_dashed",
     "fix_mermaid_labels",
+    "remove_comments",
+    "remove_editor_data",
+    "style_to_attributes",
+    "xml_declaration",
     "drop_clip",
     "clip_inset",
     "strict",
@@ -76,6 +80,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="report changes without writing")
     parser.add_argument("--strict", action="store_true", default=None, help="warnings are errors")
+    bool_action = argparse.BooleanOptionalAction
+    parser.add_argument(
+        "--remove-comments", "--no-remove-comments", action=bool_action, default=None,
+        help="strip XML comments (default: on)",
+    )
+    parser.add_argument(
+        "--remove-editor-data", "--no-remove-editor-data", action=bool_action, default=None,
+        help="strip editor namespaces and attributes (default: on)",
+    )
+    parser.add_argument(
+        "--style-to-attributes", "--no-style-to-attributes", action=bool_action, default=None,
+        help="move style properties to attributes (default: on)",
+    )
+    parser.add_argument(
+        "--xml-declaration", "--no-xml-declaration", action=bool_action, default=None,
+        help="write the <?xml …?> declaration (default: on)",
+    )
     parser.add_argument(
         "--profile",
         choices=["auto", "generic", "bokeh", "mermaid"],
@@ -143,6 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", metavar="FILE",
                         help="TOML configuration (default: svg-cleaner.toml or pyproject.toml)")
     parser.add_argument("--list-passes", action="store_true", help="list passes and exit")
+    parser.add_argument("--only", metavar="PASSES", default=None,
+                        help="run only these passes (comma-separated; see --list-passes)")
+    parser.add_argument("--skip", metavar="PASSES", default=None,
+                        help="skip these passes (comma-separated; see --list-passes)")
     parser.add_argument("-q", "--quiet", action="store_true", help="only print errors")
     parser.add_argument("-v", "--verbose", action="store_true", help="show pass statistics")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -245,7 +270,9 @@ def _run_one(source: str, destination: str, config: CleanConfig, args: argparse.
         data = sys.stdin.buffer.read()
     else:
         data = Path(source).read_bytes()
-    result = clean(data, config, filename=_label(source))
+    only = [part.strip() for part in args.only.split(",") if part.strip()] if args.only else None
+    skip = [part.strip() for part in args.skip.split(",") if part.strip()] if args.skip else None
+    result = clean(data, config, filename=_label(source), only=only, skip=skip)
     if args.check or args.dry_run:
         return result
     if destination == "-":
@@ -295,6 +322,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SvgCleanerError as exc:
         print(f"svg-cleaner: error: {exc}", file=sys.stderr)
         return 2
+
+    known_passes = {name for name, _ in describe_passes()}
+    for raw in (args.only, args.skip):
+        if not raw:
+            continue
+        for part in raw.split(","):
+            part = part.strip()
+            if part and part not in known_passes:
+                parser.error(f"unknown pass {part!r}; see --list-passes")
 
     raw_inputs = list(args.inputs)
     if not raw_inputs:

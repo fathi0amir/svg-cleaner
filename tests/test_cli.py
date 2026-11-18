@@ -123,3 +123,45 @@ def test_cli_missing_file_is_usage_error(tmp_path):
     with pytest.raises(SystemExit) as info:
         main([str(tmp_path / "missing.svg")])
     assert info.value.code == 2
+
+
+def test_cli_skip_keeps_hidden_elements(tmp_path):
+    source = write_svg(tmp_path)
+    target = tmp_path / "out.svg"
+    assert main([str(source), "-o", str(target), "--skip", "visibility"]) == 0
+    body = target.read_text(encoding="utf-8")
+    assert 'display="none"' in body
+
+
+def test_cli_only_runs_named_passes(tmp_path):
+    source = write_svg(tmp_path)
+    target = tmp_path / "out.svg"
+    assert main([str(source), "-o", str(target), "--only", "structure,geometry"]) == 0
+    body = target.read_text(encoding="utf-8")
+    # hidden rect survives because visibility was skipped
+    assert 'display="none"' in body
+
+
+def test_cli_rejects_unknown_pass(tmp_path):
+    source = write_svg(tmp_path)
+    with pytest.raises(SystemExit) as info:
+        main([str(source), "--only", "nope"])
+    assert info.value.code == 2
+
+
+def test_cli_no_xml_declaration(tmp_path):
+    source = write_svg(tmp_path)
+    target = tmp_path / "out.svg"
+    assert main([str(source), "-o", str(target), "--no-xml-declaration"]) == 0
+    assert not target.read_text(encoding="utf-8").startswith("<?xml")
+
+
+def test_cli_remove_comments_toggle(tmp_path):
+    source = tmp_path / "c.svg"
+    source.write_text(
+        f'<svg xmlns="{SVG}"><!-- keep me --><rect width="1" height="1"/></svg>',
+        encoding="utf-8",
+    )
+    target = tmp_path / "out.svg"
+    assert main([str(source), "-o", str(target), "--no-remove-comments"]) == 0
+    assert "keep me" in target.read_text(encoding="utf-8")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,8 @@ def clean(
     config: CleanConfig | None = None,
     *,
     filename: str | None = None,
+    only: Iterable[str] | None = None,
+    skip: Iterable[str] | None = None,
 ) -> CleanResult:
     """Clean one SVG document held in memory."""
     settings = config or CleanConfig()
@@ -89,7 +92,7 @@ def clean(
         profile = detect_profile(root)
 
     context = PassContext(config=settings, profile=profile)
-    run_passes(root, context)
+    run_passes(root, context, only=only, skip=skip)
     output = dump_svg(
         root,
         pretty=settings.pretty,
@@ -119,10 +122,13 @@ def clean_file(
     source: str | Path,
     destination: str | Path | None = None,
     config: CleanConfig | None = None,
+    *,
+    only: Iterable[str] | None = None,
+    skip: Iterable[str] | None = None,
 ) -> CleanResult:
     """Clean a file and (optionally) write the result atomically."""
     path = Path(source)
-    result = clean(path.read_bytes(), config, filename=str(path))
+    result = clean(path.read_bytes(), config, filename=str(path), only=only, skip=skip)
     if destination is not None:
         atomic_write(Path(destination), result.svg.encode("utf-8"))
     return result

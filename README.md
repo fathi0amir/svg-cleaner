@@ -45,7 +45,8 @@ svg-cleaner plot.svg                        # -> plot.clean.svg
 svg-cleaner plot.svg -o out/plot.svg        # explicit destination
 svg-cleaner plot.svg --inplace              # overwrite the input
 svg-cleaner -r charts/ -o cleaned/          # every *.svg below charts/
-cat in.svg | svg-cleaner - > out.svg        # stdin -> stdout
+    cat in.svg | svg-cleaner - > out.svg        # stdin -> stdout
+    python -m svg_cleaner plot.svg              # same as the console script
 svg-cleaner diagram.svg --profile mermaid   # repair a mermaid-cli export
 svg-cleaner plot.svg --drop-clip --trim-dashed
 svg-cleaner plot.svg --minify --precision 2
@@ -55,6 +56,13 @@ svg-cleaner --list-passes                   # show the pipeline
 
 The summary line and warnings go to **stderr** when the document is written to
 stdout, so `-o -` stays pipeable.
+
+Run a subset of the pipeline for debugging or CI:
+
+```bash
+svg-cleaner plot.svg --only structure,geometry
+svg-cleaner plot.svg --skip clip,visibility
+```
 
 ### Input and output
 
@@ -68,6 +76,11 @@ stdout, so `-o -` stays pipeable.
 | `--check` | write nothing; exit 1 if a file would change |
 | `--dry-run` | report what would happen without writing |
 | `--strict` | treat warnings as errors |
+| `--remove-comments` / `--no-remove-comments` | strip XML comments (default on) |
+| `--remove-editor-data` / `--no-remove-editor-data` | strip editor namespaces and attributes (default on) |
+| `--style-to-attributes` / `--no-style-to-attributes` | move style properties to attributes (default on) |
+| `--xml-declaration` / `--no-xml-declaration` | write the `<?xml …?>` declaration (default on) |
+| `--only PASSES` / `--skip PASSES` | run only, or skip, the named passes (comma-separated) |
 | `-q`, `--quiet` | only print errors |
 | `-v`, `--verbose` | print per-pass statistics |
 | `--version` | print the version and exit |
