@@ -17,7 +17,10 @@ from svg_cleaner.document import (
 )
 from svg_cleaner.errors import ParseError
 
-MINIMAL = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'
+MINIMAL = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+    '<rect width="10" height="10"/></svg>'
+)
 
 
 def test_load_and_roundtrip():

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
 
 Point = tuple[float, float]
 Bounds = tuple[float, float, float, float]
@@ -29,6 +29,7 @@ __all__ = [
     "transform_segments",
     "clip_line",
     "clip_segments",
+    "bounds_contains",
     "is_identity",
 ]
 
@@ -95,7 +96,7 @@ def _implicit(letter: str) -> str:
     return "L" if letter == "M" else "l" if letter == "m" else letter
 
 
-def parse_commands(d: Optional[str]) -> list[Command]:
+def parse_commands(d: str | None) -> list[Command]:
     """Parse a ``d`` attribute, preserving the letters as written."""
     if d is None:
         raise PathDataError("empty path data")
@@ -145,7 +146,7 @@ def parse_commands(d: Optional[str]) -> list[Command]:
     return commands
 
 
-def round_path_data(d: Optional[str], precision: int = 3) -> str:
+def round_path_data(d: str | None, precision: int = 3) -> str:
     """Round the numbers in a path without touching its commands."""
     return format_commands(parse_commands(d), precision)
 
@@ -164,12 +165,19 @@ def _reflect(point: Point, current: Point) -> Point:
     return (2 * current[0] - point[0], 2 * current[1] - point[1])
 
 
+def _point(
+    values: Sequence[float], index: int, relative: bool, current: Point
+) -> Point:
+    x, y = values[index], values[index + 1]
+    return (current[0] + x, current[1] + y) if relative else (x, y)
+
+
 def to_segments(commands: Sequence[Command]) -> list[Segment]:
     """Normalize a command list to absolute M/L/C/Q/A/Z segments."""
     segments: list[Segment] = []
     current: Point = (0.0, 0.0)
     subpath_start: Point = (0.0, 0.0)
-    last_control: Optional[Point] = None
+    last_control: Point | None = None
     last_letter = ""
     for command in commands:
         letter = command.letter
@@ -177,17 +185,13 @@ def to_segments(commands: Sequence[Command]) -> list[Segment]:
         relative = letter.islower()
         values = command.values
 
-        def point(index: int) -> Point:
-            x, y = values[index], values[index + 1]
-            return (current[0] + x, current[1] + y) if relative else (x, y)
-
         if code == "M":
-            target = point(0)
+            target = _point(values, 0, relative, current)
             segments.append(("M", target))
             current = subpath_start = target
             last_control = None
         elif code == "L":
-            target = point(0)
+            target = _point(values, 0, relative, current)
             segments.append(("L", current, target))
             current = target
             last_control = None
@@ -204,28 +208,40 @@ def to_segments(commands: Sequence[Command]) -> list[Segment]:
             current = target
             last_control = None
         elif code == "C":
-            c1, c2, end = point(0), point(2), point(4)
+            c1 = _point(values, 0, relative, current)
+            c2 = _point(values, 2, relative, current)
+            end = _point(values, 4, relative, current)
             segments.append(("C", current, c1, c2, end))
             current, last_control = end, c2
         elif code == "S":
-            c1 = _reflect(last_control, current) if last_letter in "CcSs" and last_control else current
-            c2, end = point(0), point(2)
+            c1 = (
+                _reflect(last_control, current)
+                if last_letter in "CcSs" and last_control
+                else current
+            )
+            c2 = _point(values, 0, relative, current)
+            end = _point(values, 2, relative, current)
             segments.append(("C", current, c1, c2, end))
             current, last_control = end, c2
         elif code == "Q":
-            c1, end = point(0), point(2)
+            c1 = _point(values, 0, relative, current)
+            end = _point(values, 2, relative, current)
             segments.append(("Q", current, c1, end))
             current, last_control = end, c1
         elif code == "T":
-            c1 = _reflect(last_control, current) if last_letter in "QqTt" and last_control else current
-            end = point(0)
+            c1 = (
+                _reflect(last_control, current)
+                if last_letter in "QqTt" and last_control
+                else current
+            )
+            end = _point(values, 0, relative, current)
             segments.append(("Q", current, c1, end))
             current, last_control = end, c1
         elif code == "A":
             rx, ry = abs(values[0]), abs(values[1])
             phi = values[2]
             large, sweep = bool(values[3]), bool(values[4])
-            end = point(5)
+            end = _point(values, 5, relative, current)
             if rx == 0 or ry == 0:
                 segments.append(("L", current, end))
             else:
@@ -375,7 +391,7 @@ class Matrix:
 IDENTITY = Matrix()
 
 
-def parse_transform(text: Optional[str]) -> Matrix:
+def parse_transform(text: str | None) -> Matrix:
     """Parse an SVG ``transform`` attribute; unparsable parts are ignored."""
     if not text:
         return IDENTITY
@@ -475,7 +491,7 @@ def _lerp(a: Point, b: Point, t: float) -> Point:
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
 
 
-def _inside(point: Point, bounds: Bounds, tolerance: float = 1e-9) -> bool:
+def bounds_contains(bounds: Bounds, point: Point, tolerance: float = 1e-9) -> bool:
     xmin, ymin, xmax, ymax = bounds
     return (
         xmin - tolerance <= point[0] <= xmax + tolerance
@@ -483,7 +499,11 @@ def _inside(point: Point, bounds: Bounds, tolerance: float = 1e-9) -> bool:
     )
 
 
-def clip_line(p0: Point, p1: Point, bounds: Bounds) -> Optional[tuple[Point, Point]]:
+def _inside(point: Point, bounds: Bounds, tolerance: float = 1e-9) -> bool:
+    return bounds_contains(bounds, point, tolerance)
+
+
+def clip_line(p0: Point, p1: Point, bounds: Bounds) -> tuple[Point, Point] | None:
     """Liang-Barsky line clipping; ``None`` when the line misses the box."""
     xmin, ymin, xmax, ymax = bounds
     if xmin > xmax or ymin > ymax:
@@ -570,7 +590,7 @@ def _near(a: Point, b: Point, tolerance: float = 1e-7) -> bool:
     return abs(a[0] - b[0]) <= tolerance and abs(a[1] - b[1]) <= tolerance
 
 
-def clip_segments(segments: Sequence[Segment], bounds: Bounds) -> Optional[list[Segment]]:
+def clip_segments(segments: Sequence[Segment], bounds: Bounds) -> list[Segment] | None:
     """Clip a segment list to an axis-aligned box.
 
     Returns ``None`` when the path contains an arc (or another feature the
@@ -582,9 +602,8 @@ def clip_segments(segments: Sequence[Segment], bounds: Bounds) -> Optional[list[
         return None
 
     output: list[Segment] = []
-    last_end: Optional[Point] = None
+    last_end: Point | None = None
     modified_subpath = False
-    subpath_start: Optional[Point] = None
 
     def emit(segment: Segment) -> None:
         nonlocal last_end
@@ -599,7 +618,6 @@ def clip_segments(segments: Sequence[Segment], bounds: Bounds) -> Optional[list[
         if kind == "M":
             last_end = None
             modified_subpath = False
-            subpath_start = segment[1]
             continue
         if kind in ("L", "Z"):
             p0, p1 = segment[1], segment[-1]

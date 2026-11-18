@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
 
 from lxml import etree
 
@@ -39,14 +39,14 @@ def qname(local: str) -> str:
     return f"{{{SVG_NS}}}{local}"
 
 
-def localname(element: etree._Element) -> Optional[str]:
+def localname(element: etree._Element) -> str | None:
     """Local tag name, or ``None`` for comments / processing instructions."""
     if not isinstance(element.tag, str):
         return None
     return etree.QName(element).localname
 
 
-def namespace(element: etree._Element) -> Optional[str]:
+def namespace(element: etree._Element) -> str | None:
     if not isinstance(element.tag, str):
         return None
     return etree.QName(element).namespace
@@ -71,7 +71,7 @@ def parent_map(root: etree._Element) -> dict[etree._Element, etree._Element]:
 # -- styles -------------------------------------------------------------------
 
 
-def parse_style(value: Optional[str]) -> dict[str, str]:
+def parse_style(value: str | None) -> dict[str, str]:
     """Parse a CSS ``style`` attribute into a property dict."""
     props: dict[str, str] = {}
     for part in (value or "").split(";"):
@@ -127,9 +127,9 @@ def local_style(element: etree._Element) -> dict[str, str]:
     return props
 
 
-def inherited(element: etree._Element, prop: str, default: Optional[str] = None) -> Optional[str]:
+def inherited(element: etree._Element, prop: str, default: str | None = None) -> str | None:
     """Resolve an inherited presentation property up the ancestor chain."""
-    node: Optional[etree._Element] = element
+    node: etree._Element | None = element
     while node is not None:
         props = local_style(node)
         if prop in props:
@@ -140,7 +140,7 @@ def inherited(element: etree._Element, prop: str, default: Optional[str] = None)
     return default
 
 
-def parse_number(value: Optional[str], default: Optional[float] = None) -> Optional[float]:
+def parse_number(value: str | None, default: float | None = None) -> float | None:
     """Parse a plain number, tolerating whitespace; ``None`` when unparseable."""
     if value is None:
         return default
@@ -150,7 +150,7 @@ def parse_number(value: Optional[str], default: Optional[float] = None) -> Optio
         return default
 
 
-def parse_length(value: Optional[str], default: Optional[float] = None) -> Optional[float]:
+def parse_length(value: str | None, default: float | None = None) -> float | None:
     """Parse a CSS/SVG length into user units; percentages and ``em`` yield None."""
     if value is None:
         return default
