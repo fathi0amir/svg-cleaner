@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -82,19 +83,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strict", action="store_true", default=None, help="warnings are errors")
     bool_action = argparse.BooleanOptionalAction
     parser.add_argument(
-        "--remove-comments", "--no-remove-comments", action=bool_action, default=None,
+        "--remove-comments", action=bool_action, default=None,
         help="strip XML comments (default: on)",
     )
     parser.add_argument(
-        "--remove-editor-data", "--no-remove-editor-data", action=bool_action, default=None,
+        "--remove-editor-data", action=bool_action, default=None,
         help="strip editor namespaces and attributes (default: on)",
     )
     parser.add_argument(
-        "--style-to-attributes", "--no-style-to-attributes", action=bool_action, default=None,
+        "--style-to-attributes", action=bool_action, default=None,
         help="move style properties to attributes (default: on)",
     )
     parser.add_argument(
-        "--xml-declaration", "--no-xml-declaration", action=bool_action, default=None,
+        "--xml-declaration", action=bool_action, default=None,
         help="write the <?xml …?> declaration (default: on)",
     )
     parser.add_argument(
@@ -255,6 +256,19 @@ def _plan(sources: Sequence[str], args: argparse.Namespace) -> list[str]:
     return destinations
 
 
+def _validate_destinations(destinations: Sequence[str]) -> None:
+    normalized: dict[str, str] = {}
+    for destination in destinations:
+        if destination == "-":
+            continue
+        key = os.path.normcase(os.path.realpath(destination))
+        if key in normalized:
+            raise SvgCleanerError(
+                f"multiple inputs would overwrite {destination}; use separate output paths"
+            )
+        normalized[key] = destination
+
+
 def _human(size: int) -> str:
     if size < 1024:
         return f"{size} B"
@@ -351,6 +365,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SvgCleanerError as exc:
         parser.error(str(exc))
     destinations = _plan(sources, args)
+    try:
+        _validate_destinations(destinations)
+    except SvgCleanerError as exc:
+        parser.error(str(exc))
 
     changed = 0
     failures = 0

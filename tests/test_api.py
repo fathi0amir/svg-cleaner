@@ -94,3 +94,45 @@ def test_real_bokeh_clip_path_shape_is_trimmed():
     assert "M 85.5" in result.svg
     assert "790.5" in result.svg
     assert result.changed is True
+
+
+def test_python_string_declared_encoding_is_normalized_to_utf8():
+    source = (
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+        f'<svg xmlns="{SVG}"><text>caf\u00e9</text></svg>'
+    )
+    result = clean(source)
+    assert "caf\u00e9" in result.svg
+    assert "caf\u00c3\u00a9" not in result.svg
+
+
+def test_mermaid_detection_requires_multiple_signals():
+    source = (
+        f'<svg xmlns="{SVG}" id="mermaid-logo"><foreignObject width="10" height="10">'
+        '<div xmlns="http://www.w3.org/1999/xhtml">Keep HTML</div>'
+        "</foreignObject></svg>"
+    )
+    result = clean(source)
+    assert result.profile == "generic"
+    assert "<foreignObject" in result.svg
+
+
+def test_external_stylesheet_blocks_reference_rewrites():
+    source = (
+        '<?xml-stylesheet type="text/css" href="style.css"?>'
+        f'<svg xmlns="{SVG}"><defs><linearGradient id="paint"><stop offset="0"/>'
+        "</linearGradient></defs><rect id=\"target\" display=\"none\" "
+        'width="1" height="1" fill="url(#paint)"/></svg>'
+    )
+    result = clean(source)
+    assert '<?xml-stylesheet' in result.svg
+    assert 'id="paint"' in result.svg
+    assert 'id="target"' in result.svg
+    assert 'display="none"' in result.svg
+
+
+def test_only_geometry_preserves_comments():
+    source = f'<!-- prolog --><svg xmlns="{SVG}"><!-- content --><path d="M0 0"/></svg>'
+    result = clean(source, only=["geometry"])
+    assert "<!-- prolog -->" in result.svg
+    assert "<!-- content -->" in result.svg

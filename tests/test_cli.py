@@ -165,3 +165,15 @@ def test_cli_remove_comments_toggle(tmp_path):
     target = tmp_path / "out.svg"
     assert main([str(source), "-o", str(target), "--no-remove-comments"]) == 0
     assert "keep me" in target.read_text(encoding="utf-8")
+
+
+def test_cli_rejects_recursive_output_collisions(tmp_path):
+    charts = tmp_path / "charts"
+    for directory in ("a", "b"):
+        path = charts / directory
+        path.mkdir(parents=True)
+        write_svg(path, "same.svg")
+    with pytest.raises(SystemExit) as info:
+        main(["-r", str(charts), "-o", str(tmp_path / "out")])
+    assert info.value.code == 2
+    assert not (tmp_path / "out" / "same.clean.svg").exists()

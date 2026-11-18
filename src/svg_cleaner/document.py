@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import tempfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+import tinycss2
 from lxml import etree
 
 from .errors import ParseError
@@ -64,6 +66,15 @@ def iter_elements(root: etree._Element) -> Iterator[etree._Element]:
             yield element
 
 
+def has_external_stylesheet(root: etree._Element) -> bool:
+    """Whether the document prolog or epilog references an XML stylesheet."""
+    siblings = list(root.itersiblings(preceding=True)) + list(root.itersiblings())
+    return any(
+        isinstance(node, etree._ProcessingInstruction) and node.target == "xml-stylesheet"
+        for node in siblings
+    )
+
+
 def parent_map(root: etree._Element) -> dict[etree._Element, etree._Element]:
     return {child: parent for parent in iter_elements(root) for child in parent}
 
@@ -74,14 +85,30 @@ def parent_map(root: etree._Element) -> dict[etree._Element, etree._Element]:
 def parse_style(value: str | None) -> dict[str, str]:
     """Parse a CSS ``style`` attribute into a property dict."""
     props: dict[str, str] = {}
-    for part in (value or "").split(";"):
-        key, sep, val = part.partition(":")
-        if not sep:
+    for declaration in tinycss2.parse_declaration_list(
+        value or "", skip_comments=True, skip_whitespace=True
+    ):
+        if declaration.type != "declaration":
             continue
-        key = key.strip().lower()
-        if key:
-            props[key] = val.strip()
+        value_text = tinycss2.serialize(declaration.value).strip()
+        if declaration.important:
+            value_text = f"{value_text} !important"
+        name = declaration.lower_name
+        previous = props.get(name)
+        if previous and is_important(previous) and not is_important(value_text):
+            continue
+        props[name] = value_text
     return props
+
+
+def is_important(value: str) -> bool:
+    """Whether a CSS declaration value has an ``!important`` priority."""
+    return re.search(r"!\s*important\s*$", value, flags=re.IGNORECASE) is not None
+
+
+def css_value(value: str) -> str:
+    """Return a declaration value without its trailing priority marker."""
+    return re.sub(r"\s*!\s*important\s*$", "", value, flags=re.IGNORECASE).strip()
 
 
 def format_style(props: dict[str, str]) -> str:
@@ -122,8 +149,8 @@ def unset_style(element: etree._Element, *names: str) -> None:
 
 def local_style(element: etree._Element) -> dict[str, str]:
     """Inline style plus presentation attributes as one property view."""
-    props = {name: value for name, value in element.attrib.items() if ":" not in name}
-    props.update(get_style(element))
+    props = {name: css_value(value) for name, value in element.attrib.items() if ":" not in name}
+    props.update({name: css_value(value) for name, value in get_style(element).items()})
     return props
 
 
@@ -175,13 +202,31 @@ def fmt(value: float, precision: int = 3) -> str:
 # -- parsing / serialization --------------------------------------------------
 
 
-def load_svg(source: str | bytes) -> etree._Element:
+_XML_ENCODING_RE = re.compile(
+    r"\A(?P<prefix>\ufeff?<\?xml\b[^?]*\bencoding\s*=\s*)"
+    r"(?P<quote>['\"])[^'\"]*(?P=quote)",
+    flags=re.IGNORECASE,
+)
+
+
+def _source_bytes(source: str | bytes) -> bytes:
+    if isinstance(source, bytes):
+        return bytes(source)
+    normalized = _XML_ENCODING_RE.sub(
+        lambda match: f"{match.group('prefix')}{match.group('quote')}UTF-8{match.group('quote')}",
+        source,
+        count=1,
+    )
+    return normalized.encode("utf-8")
+
+
+def load_svg(source: str | bytes, *, remove_comments: bool = False) -> etree._Element:
     """Parse an SVG document, raising :class:`ParseError` on bad input."""
-    data = source.encode("utf-8") if isinstance(source, str) else bytes(source)
+    data = _source_bytes(source)
     parser = etree.XMLParser(
         resolve_entities=False,
         no_network=True,
-        remove_comments=False,
+        remove_comments=remove_comments,
         remove_pis=False,
         huge_tree=False,
         recover=False,
@@ -246,7 +291,7 @@ def dump_svg(
     else:
         strip_whitespace(root)
     return etree.tostring(
-        root,
+        root.getroottree(),
         encoding="UTF-8",
         xml_declaration=xml_declaration,
         pretty_print=False,
@@ -262,6 +307,8 @@ def atomic_write(path: Path, data: bytes) -> None:
     )
     temp_path = Path(handle.name)
     try:
+        if path.exists():
+            os.chmod(temp_path, stat.S_IMODE(path.stat().st_mode))
         with handle:
             handle.write(data)
         os.replace(temp_path, path)

@@ -2,17 +2,32 @@
 
 from __future__ import annotations
 
+import re
+
 import cssselect
 import tinycss2
 from lxml import etree
 
-from ..document import collect, format_style, get_style, iter_elements
+from ..document import (
+    collect,
+    css_value,
+    format_style,
+    get_style,
+    is_important,
+    iter_elements,
+)
 from .context import PassContext
 
 #: Properties meaningless in a static drawing.
 SKIP_PROPERTIES = {"animation", "cursor", "pointer-events"}
 #: Values Inkscape and other renderers do not understand.
 SKIP_VALUES = {"revert", "revert-layer"}
+DYNAMIC_PSEUDOS = re.compile(
+    r":(?:active|any-link|checked|disabled|enabled|focus(?:-visible|-within)?|hover|"
+    r"in-range|indeterminate|invalid|optional|out-of-range|placeholder-shown|read-only|"
+    r"read-write|required|target|user-invalid|valid|visited)\b",
+    flags=re.IGNORECASE,
+)
 
 #: Presentation attributes that may live in an attribute instead of style.
 PRESENTATION_ATTRIBUTES = {
@@ -122,6 +137,12 @@ def _mirror(root: etree._Element) -> tuple[etree._Element, dict[etree._Element, 
 def inline_css(root: etree._Element, ctx: PassContext) -> int:
     """Resolve every stylesheet rule onto the matching elements."""
     config = ctx.config
+    if collect(root, ["script"]) or any(
+        any(name.split("}", 1)[-1].lower().startswith("on") for name in element.attrib)
+        for element in iter_elements(root)
+    ):
+        ctx.warn("styles", "script/event handler present, kept stylesheets unchanged")
+        return 0
     css = _css_text(root)
     if not css.strip():
         if config.remove_style:
@@ -157,12 +178,17 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
                 skipped_values += 1
                 continue
             if declaration.lower_name in SKIP_PROPERTIES or value in SKIP_VALUES:
+                skipped_values += 1
                 continue
             declarations.append((declaration.lower_name, value, declaration.important))
         if not declarations:
             continue
+        selector_text = tinycss2.serialize(rule.prelude)
+        if DYNAMIC_PSEUDOS.search(selector_text):
+            skipped_rules += 1
+            continue
         try:
-            selectors = cssselect.parse(tinycss2.serialize(rule.prelude))
+            selectors = cssselect.parse(selector_text)
         except Exception:
             skipped_rules += 1
             continue
@@ -190,19 +216,37 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
         styles.setdefault(element, {})[name] = value
         importance.setdefault(element, {})[name] = important
 
-    for element, properties in styles.items():
-        merged = dict(properties)
-        for name, value in get_style(element).items():
-            # a normal inline declaration loses against a !important rule
-            if not importance.get(element, {}).get(name):
-                merged[name] = value
-        element.set("style", format_style(merged))
-
     if skipped_rules or skipped_values:
         ctx.warn(
             "styles",
-            f"skipped {skipped_rules} at-rule(s) and {skipped_values} unsupported value(s)",
+            f"unsupported {skipped_rules} rule(s) and {skipped_values} declaration(s); "
+            "kept the stylesheet unchanged",
         )
+        return 0
+
+    for element, properties in styles.items():
+        inline = get_style(element)
+        merged = dict(inline)
+        for name, value in properties.items():
+            stylesheet_important = importance[element].get(name, False)
+            inline_value = inline.get(name)
+            if inline_value is not None and (
+                is_important(inline_value) or not stylesheet_important
+            ):
+                continue
+            if (
+                inline_value is None
+                and not stylesheet_important
+                and element.get(name) == css_value(value)
+            ):
+                continue
+            merged[name] = (
+                f"{value} !important" if stylesheet_important else value
+            )
+        if merged:
+            element.set("style", format_style(merged))
+        else:
+            element.attrib.pop("style", None)
 
     if config.remove_style:
         if styles or not qualified_rules:
@@ -228,9 +272,11 @@ def style_to_attributes(root: etree._Element, ctx: PassContext) -> int:
         for prop in list(style):
             if prop not in PRESENTATION_ATTRIBUTES:
                 continue
+            if is_important(style[prop]):
+                continue
             if element.get(prop) is not None:
                 continue
-            element.set(prop, style.pop(prop))
+            element.set(prop, css_value(style.pop(prop)))
             moved += 1
             changed = True
         if changed:

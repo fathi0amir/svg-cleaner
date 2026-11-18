@@ -219,7 +219,6 @@ The pipeline runs in this order and every pass is idempotent:
 | Pass | What it does |
 | --- | --- |
 | `structure` | comments, `<metadata>`, editor namespaces/attributes, empty groups |
-| `collapse-groups` | drops `<g>` wrappers with one child and no attributes |
 | `styles` | inlines `<style>` with the real cascade (specificity, `!important`, source order) and deletes it |
 | `style-attributes` | moves presentation properties to attributes, drops initial values where inheritance allows |
 | `mermaid` | `foreignObject` → `<text>`, node/edge label centring, subgraph title placement |
@@ -227,6 +226,7 @@ The pipeline runs in this order and every pass is idempotent:
 | `visibility` | removes hidden elements, unused gradients/clipPaths/masks/defs |
 | `geometry` | rounds numbers and path data, drops identity transforms |
 | `ids` | dedupes, shortens referenced ids, removes unused ones, rewrites `url(#…)`, `href`, `aria-*` and SMIL timing references |
+| `collapse-groups` | drops `<g>` wrappers with one child and no attributes after ids are cleaned |
 
 ### Clip trimming (Bokeh)
 
@@ -296,12 +296,17 @@ From Python, use `load_config_file(Path("pyproject.toml"))` to get the same
 
 ## Limitations
 
-* CSS shorthand/longhand expansion is not implemented; `var()` and at-rules are
-  dropped with a warning while everything else is inlined.
+* CSS shorthand/longhand expansion is not implemented. A stylesheet containing
+  `var()`, at-rules, dynamic-state selectors or unsupported declarations is kept
+  unchanged with a warning rather than partially inlined.
 * Arcs (`A`) are never trimmed, and filled shapes are never rewritten.
 * Trimming changes where a dashed stroke starts (hence the opt-in flag).
 * Ids referenced from outside the document (host-page CSS or JavaScript) cannot
   be detected; only the root id is always preserved.
+* ID cleanup is skipped when a `<script>` or event-handler attribute is present,
+  because arbitrary JavaScript references cannot be rewritten safely.
+* XML-stylesheet processing instructions are preserved; while one is present,
+  visibility, definition pruning and ID rewriting are skipped.
 * No rendering or pixel-diff check is built in; verify visually when a change
   matters.
 

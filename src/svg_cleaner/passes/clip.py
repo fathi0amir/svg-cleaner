@@ -6,7 +6,7 @@ import re
 
 from lxml import etree
 
-from ..document import collect, inherited, localname, parse_length
+from ..document import collect, inherited, local_style, localname, parse_length
 from ..pathdata import (
     Bounds,
     Matrix,
@@ -40,7 +40,7 @@ GEOMETRY_TAGS = {
 
 
 def _clip_reference(element: etree._Element) -> str | None:
-    value = element.get("clip-path")
+    value = local_style(element).get("clip-path")
     if not value:
         return None
     match = CLIP_REFERENCE.fullmatch(value.strip())
@@ -225,7 +225,16 @@ def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
                 ctx, seen, f"missing:{clip_id}", f"clipPath #{clip_id} not found, left as is"
             )
             continue
-        geometry = _clip_geometry(clip)
+        try:
+            geometry = _clip_geometry(clip)
+        except PathDataError as exc:
+            _warn_once(
+                ctx,
+                seen,
+                f"transform:{clip_id}",
+                f"{describe(path)}: invalid clip transform ({exc}), left as is",
+            )
+            continue
         if geometry is None:
             _warn_once(
                 ctx,
@@ -276,7 +285,16 @@ def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
             )
             continue
 
-        element_matrix = _matrix_to(path, carrier)
+        try:
+            element_matrix = _matrix_to(path, carrier)
+        except PathDataError as exc:
+            _warn_once(
+                ctx,
+                seen,
+                f"transform:{id(path)}",
+                f"{describe(path)}: invalid path transform ({exc}), left as is",
+            )
+            continue
         if element_matrix is None:
             continue
         try:

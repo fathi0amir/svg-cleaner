@@ -392,14 +392,18 @@ IDENTITY = Matrix()
 
 
 def parse_transform(text: str | None) -> Matrix:
-    """Parse an SVG ``transform`` attribute; unparsable parts are ignored."""
+    """Parse an SVG ``transform`` attribute, rejecting invalid syntax."""
     if not text:
         return IDENTITY
     result = IDENTITY
     for match in _TRANSFORM_RE.finditer(text):
         name = match.group(1).lower()
-        args = [float(part) for part in re.split(r"[\s,]+", match.group(2).strip()) if part]
         try:
+            args = [
+                float(part)
+                for part in re.split(r"[\s,]+", match.group(2).strip())
+                if part
+            ]
             if name == "translate" and args:
                 tx = args[0]
                 ty = args[1] if len(args) > 1 else 0.0
@@ -426,10 +430,13 @@ def parse_transform(text: str | None) -> Matrix:
             elif name == "matrix" and len(args) >= 6:
                 matrix = Matrix(*args[:6])
             else:
-                continue
-        except (ValueError, OverflowError):
-            continue
+                raise PathDataError(f"invalid transform function {name!r}")
+        except (ValueError, OverflowError) as exc:
+            raise PathDataError(f"invalid {name} transform") from exc
         result = result @ matrix
+    remainder = _TRANSFORM_RE.sub("", text)
+    if remainder.strip(" \t\r\n,"):
+        raise PathDataError(f"invalid transform syntax {text!r}")
     return result
 
 

@@ -10,7 +10,7 @@ from typing import Any
 from lxml import etree
 
 from .config import CleanConfig
-from .document import atomic_write, dump_svg, iter_elements, load_svg, localname
+from .document import _source_bytes, atomic_write, dump_svg, iter_elements, load_svg, localname
 from .errors import StrictWarning
 from .passes import PassContext, run_passes
 
@@ -39,6 +39,7 @@ class CleanResult:
 def detect_profile(root: etree._Element) -> str:
     """Guess ``mermaid``, ``bokeh`` or ``generic`` from the document itself."""
     classes: set[str] = set()
+    mermaid_id = False
     bokeh = False
     for element in iter_elements(root):
         element_classes = (element.get("class") or "").split()
@@ -58,9 +59,7 @@ def detect_profile(root: etree._Element) -> str:
         ):
             bokeh = True
         if (element.get("id") or "").startswith("mermaid"):
-            return "mermaid"
-        if localname(element) == "foreignObject" and "label" in element_classes:
-            return "mermaid"
+            mermaid_id = True
 
     if "mermaid" in classes:
         return "mermaid"
@@ -68,7 +67,9 @@ def detect_profile(root: etree._Element) -> str:
         return "mermaid"
     if "node" in classes and ({"cluster", "edgeLabel"} & classes):
         return "mermaid"
-    if root.get("aria-roledescription") and "node" in classes:
+    if mermaid_id and ("node" in classes or "cluster" in classes or "edgeLabel" in classes):
+        return "mermaid"
+    if root.get("aria-roledescription") and "node" in classes and mermaid_id:
         return "mermaid"
     if bokeh:
         return "bokeh"
@@ -85,14 +86,22 @@ def clean(
 ) -> CleanResult:
     """Clean one SVG document held in memory."""
     settings = config or CleanConfig()
-    data = source.encode("utf-8") if isinstance(source, str) else bytes(source)
-    root = load_svg(data)
+    data = _source_bytes(source)
+    selected = tuple(only) if only is not None else None
+    skipped = tuple(skip) if skip is not None else ()
+    remove_comments = (
+        settings.remove_comments
+        and (not selected or "structure" in selected)
+        and "structure" not in skipped
+        and "structure" not in settings.disabled_passes
+    )
+    root = load_svg(data, remove_comments=remove_comments)
     profile = settings.profile
     if profile == "auto":
         profile = detect_profile(root)
 
     context = PassContext(config=settings, profile=profile)
-    run_passes(root, context, only=only, skip=skip)
+    run_passes(root, context, only=selected, skip=skipped)
     output = dump_svg(
         root,
         pretty=settings.pretty,

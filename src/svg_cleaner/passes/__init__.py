@@ -27,12 +27,6 @@ PASSES: list[Pass] = [
         structure.cleanup_document,
     ),
     Pass(
-        "collapse-groups",
-        "replace redundant single-child <g> wrappers",
-        structure.collapse_groups,
-        enabled="collapse_groups",
-    ),
-    Pass(
         "styles",
         "inline <style> rules with the real CSS cascade",
         styles.inline_css,
@@ -70,6 +64,12 @@ PASSES: list[Pass] = [
         "dedupe, shorten and drop ids, rewriting every reference",
         ids.cleanup_ids,
         enabled="cleanup_ids",
+    ),
+    Pass(
+        "collapse-groups",
+        "replace redundant single-child <g> wrappers",
+        structure.collapse_groups,
+        enabled="collapse_groups",
     ),
 ]
 

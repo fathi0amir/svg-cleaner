@@ -99,6 +99,12 @@ def test_identity_detection():
     assert not parse_transform("translate(0.5)").is_identity()
 
 
+@pytest.mark.parametrize("transform", ["translate(foo)", "translate(1) junk"])
+def test_invalid_transform_raises(transform):
+    with pytest.raises(PathDataError):
+        parse_transform(transform)
+
+
 def test_line_clipping_against_box():
     assert clip_line((-5.0, 5.0), (15.0, 5.0), (0, 0, 10, 10)) == ((0, 5), (10, 5))
     assert clip_line((-5.0, 5.0), (-1.0, 5.0), (0, 0, 10, 10)) is None

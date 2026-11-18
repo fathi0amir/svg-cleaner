@@ -50,6 +50,17 @@ def test_style_helpers_merge_and_remove():
     assert rect.get("style") is None
 
 
+def test_style_values_may_contain_semicolons():
+    root = load_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect '
+        "style=\"fill: url('data:image/svg+xml;a;b'); stroke: red\"/></svg>"
+    )
+    assert get_style(root[0]) == {
+        "fill": 'url("data:image/svg+xml;a;b")',
+        "stroke": "red",
+    }
+
+
 def test_inherited_presentation_property():
     root = load_svg(
         '<svg xmlns="http://www.w3.org/2000/svg"><g fill="none">'
@@ -88,6 +99,15 @@ def test_pretty_and_minified_output():
     assert body.startswith("<svg")
 
 
+def test_full_document_processing_instruction_is_preserved():
+    root = load_svg(
+        '<?xml-stylesheet type="text/css" href="style.css"?>'
+        '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        remove_comments=True,
+    )
+    assert b'<?xml-stylesheet type="text/css" href="style.css"?>' in dump_svg(root, pretty=True)
+
+
 def test_text_content_is_not_reindented():
     root = load_svg(
         '<svg xmlns="http://www.w3.org/2000/svg"><text><tspan>a</tspan><tspan>b</tspan></text></svg>'
@@ -104,3 +124,12 @@ def test_atomic_write(tmp_path):
     atomic_write(target, b"<svg/>")
     assert target.read_bytes() == b"<svg/>"
     assert [p.name for p in target.parent.iterdir()] == ["out.svg"]
+
+
+def test_atomic_write_preserves_existing_permissions(tmp_path):
+    target = tmp_path / "out.svg"
+    target.write_bytes(b"<svg/>")
+    target.chmod(0o664)
+    original = target.stat().st_mode & 0o777
+    atomic_write(target, b"<svg></svg>")
+    assert target.stat().st_mode & 0o777 == original

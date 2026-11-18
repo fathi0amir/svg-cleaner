@@ -8,7 +8,7 @@ from collections.abc import Iterator
 
 from lxml import etree
 
-from ..document import collect, iter_elements
+from ..document import collect, has_external_stylesheet, iter_elements
 from .context import PassContext
 
 URL_REFERENCE = re.compile(r"url\(\s*['\"]?#([^'\")\s]+)['\"]?\s*\)")
@@ -43,6 +43,9 @@ def _attribute_name(key: str) -> str:
 def referenced_ids(root: etree._Element) -> set[str]:
     """Every id reached from ``url(#id)``, ``href="#id"`` or ``aria-*``."""
     references: set[str] = set()
+    for style in collect(root, ["style"]):
+        for match in URL_REFERENCE.finditer("".join(style.itertext())):
+            references.add(match.group(1))
     for element in iter_elements(root):
         for key, value in element.attrib.items():
             for match in URL_REFERENCE.finditer(value):
@@ -97,6 +100,15 @@ def cleanup_ids(root: etree._Element, ctx: PassContext) -> int:
     if collect(root, ["style"]):
         ctx.warn("ids", "<style> block present, leaving ids alone so CSS keeps matching")
         return 0
+    if has_external_stylesheet(root):
+        ctx.warn("ids", "external stylesheet present, leaving ids alone")
+        return 0
+    if collect(root, ["script"]) or any(
+        any(name.split("}", 1)[-1].lower().startswith("on") for name in element.attrib)
+        for element in iter_elements(root)
+    ):
+        ctx.warn("ids", "script/event handler present, leaving ids alone")
+        return 0
 
     dedupe(root, ctx)
     references = referenced_ids(root)
@@ -115,7 +127,7 @@ def cleanup_ids(root: etree._Element, ctx: PassContext) -> int:
                 continue
             mapping[identifier] = _unique(candidate, taken - {identifier})
             changed += 1
-        elif protected:
+        elif protected or _is_invisible(element):
             continue
         elif config.remove_unused_ids:
             del element.attrib["id"]
@@ -134,6 +146,20 @@ def cleanup_ids(root: etree._Element, ctx: PassContext) -> int:
         if identifier in mapping and element.get("id") == identifier:
             element.set("id", mapping[identifier])
     return changed
+
+
+def _is_invisible(element: etree._Element) -> bool:
+    from ..document import local_style
+
+    properties = local_style(element)
+    if (properties.get("display") or "").strip().lower() == "none":
+        return True
+    if (properties.get("visibility") or "").strip().lower() in ("hidden", "collapse"):
+        return True
+    try:
+        return float(properties.get("opacity", "1")) == 0
+    except ValueError:
+        return False
 
 
 def _rewrite(value: str, key: str, mapping: dict[str, str]) -> str:

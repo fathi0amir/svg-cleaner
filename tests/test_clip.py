@@ -220,6 +220,34 @@ def test_no_clip_means_no_work():
     assert not ctx.warnings
 
 
+def test_inline_clip_style_overrides_attribute():
+    root = load_svg(
+        f"""<svg xmlns="{SVG}">
+          <defs>
+            <clipPath id="narrow"><rect width="10" height="10"/></clipPath>
+            <clipPath id="wide"><rect width="50" height="50"/></clipPath>
+          </defs>
+          <path d="M -20 5 L 80 5" fill="none" stroke="black"
+                clip-path="url(#narrow)" style="clip-path: url(#wide)"/>
+        </svg>"""
+    )
+    trim_clipped_strokes(root, context())
+    assert find(root, "path").get("d") == "M 0 5 L 50 5"
+
+
+def test_invalid_clip_transform_is_preserved_with_warning():
+    root = load_svg(
+        f"""<svg xmlns="{SVG}">
+          <clipPath id="c"><rect width="10" height="10" transform="translate(foo)"/></clipPath>
+          <path d="M -20 5 L 80 5" fill="none" stroke="black" clip-path="url(#c)"/>
+        </svg>"""
+    )
+    ctx = context()
+    assert trim_clipped_strokes(root, ctx) == 0
+    assert find(root, "path").get("d") == "M -20 5 L 80 5"
+    assert ctx.warnings
+
+
 @pytest.mark.parametrize("precision", [3, 2])
 def test_clip_is_idempotent(precision):
     root = load_svg(CLIPPED)

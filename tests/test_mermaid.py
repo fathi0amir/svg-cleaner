@@ -57,15 +57,17 @@ def first_row(text):
 def test_css_is_inlined_before_labels_are_placed():
     root = load_svg(FLOWCHART)
     ctx = context()
-    assert styles.inline_css(root, ctx) == 3
-    assert not [element for element in root.iter() if localname(element) == "style"]
+    # The keyframes require the complete stylesheet to remain unchanged.
+    assert styles.inline_css(root, ctx) == 0
+    assert [element for element in root.iter() if localname(element) == "style"]
     node_rect = next(
         element
         for element in root.iter()
         if isinstance(element.tag, str)
         and localname(element) == "rect"
-        and "#ececff" in (element.get("style") or "")
+        and element.getparent().get("class") == "node"
     )
+    assert node_rect.get("style") is None
     assert node_rect.getparent().get("class") == "node"
 
 

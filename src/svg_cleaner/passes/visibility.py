@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from lxml import etree
 
-from ..document import get_style, iter_elements, localname
+from ..document import has_external_stylesheet, iter_elements, local_style, localname
 from .context import PassContext
 from .ids import referenced_ids
 
@@ -51,10 +51,11 @@ def _has_animation(element: etree._Element) -> bool:
 
 
 def _hidden_only_by_visibility(element: etree._Element) -> bool:
-    display = element.get("display") or get_style(element).get("display")
+    properties = local_style(element)
+    display = properties.get("display")
     if display and display.strip().lower() == "none":
         return False
-    opacity = element.get("opacity") or get_style(element).get("opacity")
+    opacity = properties.get("opacity")
     try:
         if opacity is not None and float(opacity) == 0:
             return False
@@ -68,20 +69,21 @@ def _visibility_reenabled(element: etree._Element) -> bool:
     for descendant in element.iterdescendants():
         if not isinstance(descendant.tag, str):
             continue
-        value = descendant.get("visibility") or get_style(descendant).get("visibility")
+        value = local_style(descendant).get("visibility")
         if value and value.strip().lower() == "visible":
             return True
     return False
 
 
 def _is_hidden(element: etree._Element) -> bool:
-    display = element.get("display") or get_style(element).get("display")
+    properties = local_style(element)
+    display = properties.get("display")
     if display and display.strip().lower() == "none":
         return True
-    visibility = element.get("visibility") or get_style(element).get("visibility")
+    visibility = properties.get("visibility")
     if visibility and visibility.strip().lower() in ("hidden", "collapse"):
         return True
-    opacity = element.get("opacity") or get_style(element).get("opacity")
+    opacity = properties.get("opacity")
     if opacity is not None:
         try:
             if float(opacity) == 0:
@@ -115,10 +117,24 @@ def prune_definitions(root: etree._Element, ctx: PassContext) -> int:
     references = referenced_ids(root)
     removed = 0
 
+    def subtree_referenced(element: etree._Element) -> bool:
+        return bool(
+            any(
+                node.get("id") in references
+                for node in element.iter()
+                if isinstance(node.tag, str)
+            )
+        )
+
     for element in list(iter_elements(root)):
         name = localname(element)
         identifier = element.get("id")
-        if name in DEFINITION_TAGS and identifier and identifier not in references:
+        if (
+            name in DEFINITION_TAGS
+            and identifier
+            and identifier not in references
+            and not subtree_referenced(element)
+        ):
             parent = element.getparent()
             if parent is not None:
                 parent.remove(element)
@@ -130,7 +146,7 @@ def prune_definitions(root: etree._Element, ctx: PassContext) -> int:
                     removed += 1
                     continue
                 child_id = child.get("id")
-                if child_id and child_id not in references:
+                if child_id and child_id not in references and not subtree_referenced(child):
                     element.remove(child)
                     removed += 1
             if len(element) == 0 and not element.attrib and element.getparent() is not None:
@@ -140,6 +156,9 @@ def prune_definitions(root: etree._Element, ctx: PassContext) -> int:
 
 
 def cleanup_visibility(root: etree._Element, ctx: PassContext) -> int:
+    if has_external_stylesheet(root):
+        ctx.warn("visibility", "external stylesheet present, leaving visibility and defs alone")
+        return 0
     config = ctx.config
     removed = 0
     if config.remove_hidden:

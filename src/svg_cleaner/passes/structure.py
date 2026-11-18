@@ -38,7 +38,7 @@ def cleanup_document(root: etree._Element, ctx: PassContext) -> int:
         for element in list(root.iter()):
             if isinstance(element.tag, str):
                 continue
-            if isinstance(element, (etree._Comment, etree._ProcessingInstruction)):
+            if isinstance(element, etree._Comment):
                 removed += _remove(element)
 
     if config.remove_metadata:

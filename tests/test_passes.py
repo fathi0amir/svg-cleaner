@@ -66,7 +66,6 @@ def test_css_inlining_respects_cascade_and_inline_style():
               rect {{ stroke: blue }}
               #special {{ stroke: green }}
               .important {{ fill: black !important }}
-              @keyframes spin {{ from {{ opacity: 0 }} }}
             </style>
             <rect id="special" class="box" width="1" height="1"/>
             <rect class="box important" width="2" height="2" style="stroke-width: 5"/>
@@ -81,7 +80,7 @@ def test_css_inlining_respects_cascade_and_inline_style():
         "stroke": "green",
     }
     other = find(root, "rect", width="2")
-    assert parse_style(other.get("style"))["fill"] == "black"
+    assert parse_style(other.get("style"))["fill"] == "black !important"
     assert parse_style(other.get("style"))["stroke-width"] == "5"
     assert not [element for element in root.iter() if localname(element) == "style"]
 
@@ -94,7 +93,7 @@ def test_unmatched_stylesheet_is_kept():
     ctx = context()
     styles.inline_css(root, ctx)
     assert [element for element in root.iter() if localname(element) == "style"]
-    assert any("kept the <style> block" in warning for warning in ctx.warnings)
+    assert any("kept" in warning and "stylesheet" in warning for warning in ctx.warnings)
 
 
 def test_default_attributes_respect_inheritance():
@@ -124,7 +123,80 @@ def test_important_stylesheet_rule_beats_normal_inline_style():
         '<rect width="1" height="1" style="fill: blue"/></svg>'
     )
     styles.inline_css(root, context())
-    assert parse_style(find(root, "rect").get("style"))["fill"] == "red"
+    assert parse_style(find(root, "rect").get("style"))["fill"] == "red !important"
+
+
+def test_important_inline_rule_beats_important_stylesheet_rule():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>rect {{ fill: red !important }}</style>'
+        '<rect width="1" height="1" style="fill: blue !important"/></svg>'
+    )
+    styles.inline_css(root, context())
+    assert parse_style(find(root, "rect").get("style"))["fill"] == "blue !important"
+
+
+def test_unsupported_css_keeps_stylesheet():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>:root {{ --color: red }} '
+        "rect { fill: var(--color) } circle { fill: blue }</style>"
+        '<rect width="1" height="1"/><circle r="1"/></svg>'
+    )
+    ctx = context()
+    styles.inline_css(root, ctx)
+    assert [element for element in root.iter() if localname(element) == "style"]
+    assert ctx.warnings
+    assert find(root, "circle").get("style") is None
+
+
+def test_dynamic_css_keeps_entire_stylesheet_unchanged():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>.a:hover {{ fill: red }} '
+        ".b { fill: blue }</style>"
+        '<rect class="a" width="1" height="1"/>'
+        '<rect class="b" width="1" height="1"/></svg>'
+    )
+    ctx = context()
+    original = "".join(root[0].itertext())
+    styles.inline_css(root, ctx)
+    assert "".join(root[0].itertext()) == original
+    assert all(
+        element.get("style") is None
+        for element in root.iter()
+        if localname(element) == "rect"
+    )
+    assert ctx.warnings
+
+
+def test_skipped_css_property_keeps_entire_stylesheet():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>.a {{ animation: x 1s }} '
+        ".b { fill: blue }</style>"
+        '<rect class="a" width="1" height="1"/>'
+        '<rect class="b" width="1" height="1"/></svg>'
+    )
+    ctx = context()
+    styles.inline_css(root, ctx)
+    assert [element for element in root.iter() if localname(element) == "style"]
+    assert all(
+        element.get("style") is None
+        for element in root.iter()
+        if localname(element) == "rect"
+    )
+    assert ctx.warnings
+
+
+def test_scripts_keep_stylesheets_and_ids_unchanged():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>rect {{ fill: blue }}</style>'
+        '<rect id="longIdentifier" width="1" height="1"/>'
+        "<script>addDynamicNode()</script></svg>"
+    )
+    ctx = context()
+    styles.inline_css(root, ctx)
+    ids.cleanup_ids(root, ctx)
+    assert [element for element in root.iter() if localname(element) == "style"]
+    assert find(root, "rect").get("style") is None
+    assert find(root, "rect").get("id") == "longIdentifier"
 
 
 def test_config_rejects_wrong_types(tmp_path):
@@ -150,6 +222,16 @@ def test_style_to_attributes_and_defaults():
     styles.drop_default_attributes(root, ctx)
     assert rect.get("stroke-width") is None
     assert find(root, "g").get("fill") == "blue"
+
+
+def test_style_to_attributes_preserves_important_declarations():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect style="fill: red !important" width="1" height="1"/></svg>'
+    )
+    styles.style_to_attributes(root, context())
+    rect = find(root, "rect")
+    assert rect.get("fill") is None
+    assert rect.get("style") == "fill: red !important"
 
 
 def test_cleanup_ids_shortens_and_rewrites_references():
@@ -254,6 +336,17 @@ def test_precision_never_collapses_viewbox_or_dashes_to_zero():
     assert find(root, "path").get("stroke-dasharray") == "0.0004 2"
 
 
+def test_precision_never_collapses_opacity_to_zero():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect opacity="0.0004" fill-opacity="0.0004" '
+        'width="1" height="1"/></svg>'
+    )
+    geometry.simplify_geometry(root, context(precision=2))
+    rect = find(root, "rect")
+    assert rect.get("opacity") == "0.0004"
+    assert rect.get("fill-opacity") == "0.0004"
+
+
 def test_path_mode_relative_rewrites_commands():
     root = load_svg(
         f'<svg xmlns="{SVG}"><path d="M 0 0 L 10 10 L 20 0"/></svg>'
@@ -298,3 +391,75 @@ def test_hidden_elements_with_ids_are_kept():
     )
     visibility.cleanup_visibility(root, context())
     assert find(root, "rect", id="target") is not None
+
+
+def test_inline_style_overrides_visibility_attribute():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect display="none" style="display: inline" '
+        'width="1" height="1"/></svg>'
+    )
+    visibility.cleanup_visibility(root, context())
+    assert find(root, "rect") is not None
+
+
+def test_definition_container_is_kept_for_referenced_descendant():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><defs><g id="container">'
+        '<path id="shape" d="M0 0L1 1"/></g></defs><use href="#shape"/></svg>'
+    )
+    visibility.cleanup_visibility(root, context())
+    assert find(root, "g", id="container") is not None
+    assert find(root, "path", id="shape") is not None
+
+
+def test_definition_referenced_by_retained_css_is_kept():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>:root {{ --paint: url(#paint) }} '
+        "rect { fill: var(--paint) }</style><defs>"
+        '<linearGradient id="paint"><stop offset="0"/></linearGradient>'
+        '</defs><rect width="1" height="1"/></svg>'
+    )
+    visibility.cleanup_visibility(root, context())
+    assert find(root, "linearGradient", id="paint") is not None
+
+
+def test_invalid_transform_is_preserved_with_warning():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><path transform="translate(foo)" d="M0 0L1 1"/></svg>'
+    )
+    ctx = context()
+    geometry.simplify_geometry(root, ctx)
+    assert find(root, "path").get("transform") == "translate(foo)"
+    assert ctx.warnings
+
+
+def test_pipeline_is_idempotent_after_id_cleanup():
+    svg = (
+        f'<svg xmlns="{SVG}"><g id="wrapper"><g><path id="shape" '
+        'd="M 10.0004 10.0004 L 20 20"/></g></g></svg>'
+    )
+    first = clean(svg, CleanConfig()).svg
+    second = clean(first, CleanConfig()).svg
+    assert second == first
+
+
+def test_script_prevents_id_cleanup():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect id="longIdentifier" width="1" height="1"/>'
+        "<script>document.getElementById('longIdentifier')</script></svg>"
+    )
+    ctx = context()
+    ids.cleanup_ids(root, ctx)
+    assert find(root, "rect").get("id") == "longIdentifier"
+    assert ctx.warnings
+
+
+def test_hidden_element_keeps_its_id_for_idempotence():
+    svg = (
+        f'<svg xmlns="{SVG}"><rect id="hidden" display="none" '
+        'width="1" height="1"/></svg>'
+    )
+    first = clean(svg, CleanConfig()).svg
+    second = clean(first, CleanConfig()).svg
+    assert first == second
+    assert 'id="hidden"' in first

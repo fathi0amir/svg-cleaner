@@ -74,6 +74,11 @@ PROTECT_ZERO = {
     "stdDeviation",
     "baseFrequency",
     "radius",
+    "opacity",
+    "fill-opacity",
+    "stroke-opacity",
+    "stop-opacity",
+    "flood-opacity",
 }
 
 
@@ -158,9 +163,15 @@ def simplify_geometry(root: etree._Element, ctx: PassContext) -> int:
                 element.set(name, rounded)
                 changed += 1
         transform = element.get("transform")
-        if transform is not None and parse_transform(transform).is_identity():
-            del element.attrib["transform"]
-            changed += 1
+        if transform is not None:
+            try:
+                identity = parse_transform(transform).is_identity()
+            except PathDataError as exc:
+                ctx.warn("geometry", f"kept invalid transform {transform!r}: {exc}")
+            else:
+                if identity:
+                    del element.attrib["transform"]
+                    changed += 1
 
     for path in collect(root, ["path"]):
         data = path.get("d")
