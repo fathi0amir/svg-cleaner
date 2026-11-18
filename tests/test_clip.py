@@ -248,6 +248,17 @@ def test_invalid_clip_transform_is_preserved_with_warning():
     assert ctx.warnings
 
 
+def test_drop_clip_removes_inline_style_reference():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><clipPath id="c"><rect width="10" height="10"/></clipPath>'
+        '<path d="M -20 5 L 80 5" fill="none" stroke="black" '
+        'style="clip-path: url(#c)"/></svg>'
+    )
+    assert trim_clipped_strokes(root, context(drop_clip=True)) == 1
+    path = find(root, "path")
+    assert "clip-path" not in (path.get("style") or "")
+
+
 @pytest.mark.parametrize("precision", [3, 2])
 def test_clip_is_idempotent(precision):
     root = load_svg(CLIPPED)

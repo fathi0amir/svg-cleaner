@@ -6,7 +6,7 @@ import re
 
 from lxml import etree
 
-from ..document import collect, inherited, local_style, localname, parse_length
+from ..document import collect, inherited, local_style, localname, parse_length, unset_style
 from ..pathdata import (
     Bounds,
     Matrix,
@@ -186,7 +186,7 @@ def _warn_once(ctx: PassContext, seen: set[str], key: str, message: str) -> None
 
 def _drop_group_clip(carrier: etree._Element, handled: set[etree._Element]) -> None:
     """Remove a clip-path from a group whose geometry was all trimmed."""
-    if carrier.get("clip-path") is None:
+    if _clip_reference(carrier) is None:
         return
     for element in carrier.iterdescendants():
         if not isinstance(element.tag, str):
@@ -194,6 +194,7 @@ def _drop_group_clip(carrier: etree._Element, handled: set[etree._Element]) -> N
         if localname(element) in GEOMETRY_TAGS and element not in handled:
             return
     carrier.attrib.pop("clip-path", None)
+    unset_style(carrier, "clip-path")
 
 
 def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
@@ -340,6 +341,7 @@ def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
         handled.add(path)
         if config.drop_clip:
             path.attrib.pop("clip-path", None)
+            unset_style(path, "clip-path")
             carriers.add(carrier)
         trimmed += 1
 

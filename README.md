@@ -20,7 +20,8 @@ install from a checkout (see below).
 ## What it does
 
 * strips comments, `<metadata>` and editor-specific elements/attributes
-* inlines `<style>` rules with the real CSS cascade and deletes the block
+* inlines fully representable `<style>` rules with the real CSS cascade;
+  unsupported stylesheets are preserved unchanged
 * shortens ids, removes unused definitions and rewrites every reference
 * rounds coordinates and path data to a chosen precision
 * trims stroked paths against rectangular `clipPath`s (Bokeh exports)
@@ -107,8 +108,8 @@ Every toggle is on unless noted; `--no-…` switches it off.
 
 | Toggle | Effect |
 | --- | --- |
-| `--inline-css` | inline `<style>` rules, then delete the block |
-| `--remove-metadata` | strip `<metadata>` (comments and editor namespaces are always removed) |
+| `--inline-css` | inline a fully representable `<style>` block, then delete it |
+| `--remove-metadata` | strip `<metadata>` |
 | `--cleanup-ids` | dedupe, shorten referenced ids, drop unused ones |
 | `--collapse-groups` | replace single-child `<g>` wrappers |
 | `--remove-hidden` | remove invisible elements |
@@ -116,12 +117,11 @@ Every toggle is on unless noted; `--no-…` switches it off.
 | `--trim-dashed` | also trim dashed strokes (**off**: shifts the dash phase) |
 | `--fix-mermaid-labels` | re-place mermaid labels and subgraph titles (foreignObject conversion still runs) |
 
-`structure`, `style-attributes`, `visibility` and `geometry` always run. Their
-unconditional parts have no switch: comments, editor namespaces and empty
-groups are always dropped, `style` properties are always moved to attributes,
-unreferenced definitions are always pruned, and numbers are always rounded.
-`--no-remove-metadata` only keeps `<metadata>`; `--no-remove-hidden` only keeps
-hidden elements.
+With the default configuration, `structure`, `style-attributes`, `visibility`
+and `geometry` run unconditionally in the pass order below; `--only` and
+`--skip` can still select them explicitly. Comment/editor removal and moving
+styles into attributes have their own toggles. External XML stylesheets make
+visibility, definition pruning and ID rewriting conservative.
 
 ### Mermaid tuning
 
@@ -219,7 +219,7 @@ The pipeline runs in this order and every pass is idempotent:
 | Pass | What it does |
 | --- | --- |
 | `structure` | comments, `<metadata>`, editor namespaces/attributes, empty groups |
-| `styles` | inlines `<style>` with the real cascade (specificity, `!important`, source order) and deletes it |
+| `styles` | inlines fully representable `<style>` blocks with the real cascade and otherwise preserves the block |
 | `style-attributes` | moves presentation properties to attributes, drops initial values where inheritance allows |
 | `mermaid` | `foreignObject` → `<text>`, node/edge label centring, subgraph title placement |
 | `clip` | trims unfilled strokes against rectangular clip paths |
@@ -241,7 +241,7 @@ rectangle, and clips the path data:
   so transformed glyphs work;
 * straight lines are cut with Liang–Barsky, curves with recursive Bézier
   subdivision (quadratics are elevated to cubics);
-* the `clip-path` attribute is kept by default, so stroke caps are still
+* the `clip-path` property is kept by default, so stroke caps are still
   clipped exactly as before;
 * `--drop-clip` removes the now-redundant reference, and only then
   `--clip-inset` (default: half the stroke width) keeps round/butt caps inside
@@ -261,15 +261,10 @@ rectangle.
 ### Mermaid repair
 
 Node labels inside a cluster are no longer re-placed as subgraph titles (a bug
-in the first script version), and `<style>` is inlined before anything is
-measured — including rules scoped to the root id (`#my-svg .node rect`), which
-mermaid emits for every diagram. If no CSS rule can be matched at all, the
-stylesheet is kept and a warning is reported rather than silently losing the
-styling.
-
-Measured on a 27-node mermaid-cli flowchart: 35.4 KiB → 32.1 KiB, and every
-node, edge and subgraph label row lands at the same absolute position as the
-reference repaired file.
+in the first script version). Fully representable styles are inlined before
+anything is measured, including rules scoped to the root id
+(`#my-svg .node rect`). If the stylesheet contains unsupported CSS, the
+complete block is retained and layout detection reads the remaining CSS.
 
 ## Configuration file
 
