@@ -136,7 +136,13 @@ the original repair script are still available:
 
 Node labels inside a cluster are no longer re-placed as subgraph titles (a bug
 in the first script version), and `<style>` is inlined before anything is
-measured.
+measured — including rules scoped to the root id (`#my-svg .node rect`), which
+mermaid emits for every diagram.
+
+Measured on a 27-node mermaid-cli flowchart: 35.4 KiB → 32.1 KiB, and every
+node, edge and subgraph label row lands at the same absolute position as the
+reference repaired file. If no CSS rule can be matched at all, the stylesheet
+is kept and a warning is reported rather than silently losing the styling.
 
 ## Configuration file
 

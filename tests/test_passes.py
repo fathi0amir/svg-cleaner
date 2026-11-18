@@ -82,6 +82,17 @@ def test_css_inlining_respects_cascade_and_inline_style():
     assert not [element for element in root.iter() if localname(element) == "style"]
 
 
+def test_unmatched_stylesheet_is_kept():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>{{ fill: red }}</style>'
+        '<rect width="1" height="1"/></svg>'
+    )
+    ctx = context()
+    styles.inline_css(root, ctx)
+    assert [element for element in root.iter() if localname(element) == "style"]
+    assert any("kept the <style> block" in warning for warning in ctx.warnings)
+
+
 def test_style_to_attributes_and_defaults():
     root = load_svg(
         f"""<svg xmlns="{SVG}">

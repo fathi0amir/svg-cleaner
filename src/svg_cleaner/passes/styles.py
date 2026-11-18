@@ -99,6 +99,9 @@ def _css_text(root: etree._Element) -> str:
 def _mirror(root: etree._Element) -> tuple[etree._Element, dict[etree._Element, etree._Element]]:
     """Namespace-free mirror of the tree so cssselect's XPath can match it."""
     mirror_root = etree.Element("svg")
+    for key, value in root.attrib.items():
+        # rules are routinely scoped to the root id (mermaid emits #my-svg …)
+        mirror_root.set(key.split("}", 1)[-1] if "}" in key else key, value)
     mapping: dict[etree._Element, etree._Element] = {}
 
     def walk(source: etree._Element, target: etree._Element) -> None:
@@ -131,6 +134,7 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
     matches: list[tuple[bool, tuple, int, etree._Element, str, str]] = []
     skipped_rules = 0
     skipped_values = 0
+    qualified_rules = 0
 
     for order, rule in enumerate(
         tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True)
@@ -138,6 +142,7 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
         if rule.type != "qualified-rule":
             skipped_rules += 1
             continue
+        qualified_rules += 1
         declarations = []
         for declaration in tinycss2.parse_declaration_list(
             rule.content, skip_comments=True, skip_whitespace=True
@@ -194,8 +199,15 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
         )
 
     if config.remove_style:
-        for style in collect(root, ["style"]):
-            style.getparent().remove(style)
+        if styles or not qualified_rules:
+            for style in collect(root, ["style"]):
+                style.getparent().remove(style)
+        else:
+            # deleting a stylesheet nothing matched would silently lose styling
+            ctx.warn(
+                "styles",
+                "no rule could be matched to an element; kept the <style> block",
+            )
     return len(styles)
 
 

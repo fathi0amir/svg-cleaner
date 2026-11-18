@@ -109,6 +109,22 @@ def test_foreign_objects_become_editable_text():
     assert rows[0].get("x") == rows[1].get("x") == "0.00"
 
 
+def test_css_scoped_to_the_root_id_is_inlined():
+    # mermaid scopes every rule to the root id, so the mirror must carry it
+    root = load_svg(
+        f'<svg xmlns="{SVG}" id="my-svg"><style>#my-svg rect {{ fill: red }}</style>'
+        '<g class="node"><rect width="1" height="1"/></g></svg>'
+    )
+    ctx = context()
+    assert styles.inline_css(root, ctx) == 1
+    rect = next(
+        element
+        for element in root.iter()
+        if isinstance(element.tag, str) and localname(element) == "rect"
+    )
+    assert rect.get("style") == "fill: red"
+
+
 def test_detect_font_size_reads_inlined_css():
     root = load_svg(
         f'<svg xmlns="{SVG}"><style>.node text {{ font-size: 20px }}</style>'
