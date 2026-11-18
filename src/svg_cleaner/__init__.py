@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .api import CleanResult, clean, clean_file, detect_profile
 from .config import CleanConfig, load_config_file
-from .errors import ParseError, SvgCleanerError, UnsupportedSvgError
+from .errors import ParseError, StrictWarning, SvgCleanerError, UnsupportedSvgError
 from .passes import PASSES, describe_passes
 
 __version__ = "0.1.0"
@@ -20,6 +20,7 @@ __all__ = [
     "SvgCleanerError",
     "ParseError",
     "UnsupportedSvgError",
+    "StrictWarning",
     "PASSES",
     "describe_passes",
 ]
