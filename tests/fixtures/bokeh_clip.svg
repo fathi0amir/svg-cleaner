@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" data-bokeh-model-id="figure-1">
+  <defs>
+    <clipPath id="plot-area-clip">
+      <rect x="50" y="30" width="300" height="200"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#plot-area-clip)">
+    <path d="M -20 130 L 120 130 L 120 230 L 420 230" fill="none" stroke="#1f77b4" stroke-width="2"/>
+    <path d="M 0 250 C 100 300 300 -40 400 100" fill="none" stroke="#ff7f0e" stroke-width="2"/>
+    <rect x="10" y="40" width="30" height="30" fill="#2ca02c"/>
+  </g>
+  <g class="bk-axis">
+    <line x1="50" y1="30" x2="50" y2="230" stroke="black"/>
+    <text x="20" y="130">value</text>
+  </g>
+</svg>

@@ -1,0 +1,162 @@
+"""Identifier cleanup: dedupe, shorten, drop unused ids and rewrite references."""
+
+from __future__ import annotations
+
+import re
+import string
+from collections.abc import Iterator
+
+from lxml import etree
+
+from ..document import collect, iter_elements
+from .context import PassContext
+
+URL_REFERENCE = re.compile(r"url\(\s*['\"]?#([^'\")\s]+)['\"]?\s*\)")
+TOKEN_LIST_ATTRIBUTES = {
+    "aria-labelledby",
+    "aria-describedby",
+    "aria-controls",
+    "aria-owns",
+    "aria-flowto",
+}
+PROTECTED_PREFIXES = ("mermaid",)
+
+_ALPHABET = string.ascii_lowercase + string.ascii_uppercase
+
+
+def short_name(index: int) -> str:
+    """``0 -> a``, ``51 -> Z``, ``52 -> aa``."""
+    index += 1
+    out = ""
+    while index:
+        index, remainder = divmod(index - 1, len(_ALPHABET))
+        out = _ALPHABET[remainder] + out
+    return out
+
+
+def _attribute_name(key: str) -> str:
+    return key.split("}", 1)[-1] if "}" in key else key
+
+
+def referenced_ids(root: etree._Element) -> set[str]:
+    """Every id reached from ``url(#id)``, ``href="#id"`` or ``aria-*``."""
+    references: set[str] = set()
+    for element in iter_elements(root):
+        for key, value in element.attrib.items():
+            for match in URL_REFERENCE.finditer(value):
+                references.add(match.group(1))
+            name = _attribute_name(key)
+            if name == "href" and value.strip().startswith("#"):
+                references.add(value.strip()[1:])
+            elif name in TOKEN_LIST_ATTRIBUTES:
+                references.update(token for token in value.split() if token)
+    return references
+
+
+def _ids(root: etree._Element) -> Iterator[tuple[etree._Element, str]]:
+    for element in iter_elements(root):
+        identifier = element.get("id")
+        if identifier:
+            yield element, identifier
+
+
+def _unique(candidate: str, taken: set[str]) -> str:
+    name = candidate
+    counter = 2
+    while name in taken:
+        name = f"{candidate}-{counter}"
+        counter += 1
+    taken.add(name)
+    return name
+
+
+def dedupe(root: etree._Element, ctx: PassContext) -> int:
+    """Give every duplicate id a fresh name (the first occurrence wins)."""
+    seen: dict[str, etree._Element] = {}
+    renamed = 0
+    taken = {identifier for _element, identifier in _ids(root)}
+    for element, identifier in list(_ids(root)):
+        first = seen.get(identifier)
+        if first is None:
+            seen[identifier] = element
+            continue
+        new_id = _unique(f"{identifier}-2", taken)
+        element.set("id", new_id)
+        renamed += 1
+        ctx.warn("ids", f"duplicate id #{identifier} renamed to #{new_id}")
+    return renamed
+
+
+def cleanup_ids(root: etree._Element, ctx: PassContext) -> int:
+    """Shorten referenced ids and drop ids nothing points at."""
+    config = ctx.config
+    if collect(root, ["style"]):
+        ctx.warn("ids", "<style> block present, leaving ids alone so CSS keeps matching")
+        return 0
+
+    dedupe(root, ctx)
+    references = referenced_ids(root)
+    identifiers = list(_ids(root))
+    taken = {identifier for _element, identifier in identifiers}
+    mapping: dict[str, str] = {}
+    changed = 0
+
+    for element, identifier in identifiers:
+        protected = element.getparent() is None or identifier.startswith(PROTECTED_PREFIXES)
+        if identifier in references:
+            if not config.shorten_ids:
+                continue
+            candidate = short_name(len(mapping))
+            if len(candidate) >= len(identifier):
+                continue
+            mapping[identifier] = _unique(candidate, taken - {identifier})
+            changed += 1
+        elif protected:
+            continue
+        elif config.remove_unused_ids:
+            del element.attrib["id"]
+            changed += 1
+
+    if not mapping:
+        return changed
+
+    for element in iter_elements(root):
+        for key, value in list(element.attrib.items()):
+            updated = _rewrite(value, key, mapping)
+            if updated != value:
+                element.set(key, updated)
+
+    for element, identifier in identifiers:
+        if identifier in mapping and element.get("id") == identifier:
+            element.set("id", mapping[identifier])
+    return changed
+
+
+def _rewrite(value: str, key: str, mapping: dict[str, str]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        new = mapping.get(match.group(1))
+        return f"url(#{new})" if new else match.group(0)
+
+    updated = URL_REFERENCE.sub(replace, value)
+    name = _attribute_name(key)
+    stripped = updated.strip()
+    if name == "href" and stripped.startswith("#"):
+        new = mapping.get(stripped[1:])
+        if new:
+            return f"#{new}"
+    if name in TOKEN_LIST_ATTRIBUTES:
+        tokens = [mapping.get(token, token) for token in updated.split()]
+        return " ".join(tokens)
+    return updated
+
+
+def protect_external_ids(root: etree._Element, ctx: PassContext) -> None:
+    """Warn when ids are referenced from outside the document.
+
+    Embedders often target ids such as ``#plot`` from their own CSS/JS. There
+    is no way to see those references, so ids whose name looks like an entry
+    point are kept rather than shortened.
+    """
+    root_id: str | None = root.get("id")
+    if root_id:
+        ctx.warn("ids", f"kept root id #{root_id} (may be referenced from the page)")

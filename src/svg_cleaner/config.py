@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:  # Python 3.11+
     import tomllib
@@ -58,23 +58,26 @@ class CleanConfig:
 
     # -- clip trimming (the bokeh pass) ---------------------------------------
     trim_clip: bool = True
+    #: Dashed strokes keep their dash phase only at the original start, so
+    #: trimming them is opt-in: the dashes visibly shift after the cut.
+    trim_dashed: bool = False
     drop_clip: bool = False
-    clip_inset: Optional[float] = None  # None = half the stroke width
+    clip_inset: float | None = None  # None = half the stroke width
 
     # -- mermaid --------------------------------------------------------------
     fix_mermaid_labels: bool = True
     convert_foreign_objects: bool = True
     baseline: float = 0.35
     line_height: float = 1.1
-    font_size: Optional[float] = None
-    cluster_font_size: Optional[float] = None
+    font_size: float | None = None
+    cluster_font_size: float | None = None
     cluster_align: str = "center"
     cluster_pad_top: float = 6.0
     cluster_pad_x: float = 8.0
     label_dx: float = 0.0
     label_dy: float = 0.0
-    fo_font_family: Optional[str] = None
-    fo_fill: Optional[str] = None
+    fo_font_family: str | None = None
+    fo_fill: str | None = None
 
     # -- bookkeeping ----------------------------------------------------------
     disabled_passes: tuple[str, ...] = field(default_factory=tuple)

@@ -18,6 +18,8 @@ htmlcov/
 # Local scratch
 *.local.svg
 svg-cleaner.toml
+.tmp-verify/
 
 # Freebuff workspace metadata
 .freebuff/
+.cloud-attachments/
