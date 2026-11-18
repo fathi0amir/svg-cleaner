@@ -134,6 +134,19 @@ def test_detect_font_size_reads_inlined_css():
     assert mermaid.detect_font_size(root) == 20.0
 
 
+def test_percentage_foreign_object_dimensions_do_not_crash():
+    root = load_svg(
+        f'<svg xmlns="{SVG}" id="mermaid-4"><g class="node"><g class="label">'
+        '<foreignObject x="0" y="0" width="100%" height="20">'
+        '<div xmlns="http://www.w3.org/1999/xhtml"><p>Hi</p></div>'
+        '</foreignObject></g></g></svg>'
+    )
+    ctx = context()
+    mermaid.repair_mermaid(root, ctx)
+    assert not [element for element in root.iter() if localname(element) == "foreignObject"]
+    assert texts(root)
+
+
 def test_foreign_objects_can_be_disabled():
     root = load_svg(FOREIGN)
     ctx = context(convert_foreign_objects=False)

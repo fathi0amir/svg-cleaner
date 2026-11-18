@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from svg_cleaner.config import CleanConfig
+import pytest
+
+from svg_cleaner.config import CleanConfig, load_config_file
 from svg_cleaner.document import load_svg, localname, parse_style
+from svg_cleaner.errors import SvgCleanerError
 from svg_cleaner.passes import PassContext, geometry, ids, structure, styles, visibility
 
 SVG = "http://www.w3.org/2000/svg"
@@ -93,6 +96,43 @@ def test_unmatched_stylesheet_is_kept():
     assert any("kept the <style> block" in warning for warning in ctx.warnings)
 
 
+def test_default_attributes_respect_inheritance():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><g stroke-width="3" fill-opacity="0.5">'
+        '<path d="M0 0 L1 1" fill="none" stroke="black" stroke-width="1" '
+        'fill-opacity="1"/></g></svg>'
+    )
+    styles.drop_default_attributes(root, context())
+    path = find(root, "path")
+    # dropping these would make the path inherit 3 / 0.5 from the group
+    assert path.get("stroke-width") == "1"
+    assert path.get("fill-opacity") == "1"
+
+
+def test_standalone_default_attributes_are_still_dropped():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect width="1" height="1" stroke-width="1"/></svg>'
+    )
+    assert styles.drop_default_attributes(root, context()) == 1
+    assert find(root, "rect").get("stroke-width") is None
+
+
+def test_important_stylesheet_rule_beats_normal_inline_style():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><style>rect {{ fill: red !important }}</style>'
+        '<rect width="1" height="1" style="fill: blue"/></svg>'
+    )
+    styles.inline_css(root, context())
+    assert parse_style(find(root, "rect").get("style"))["fill"] == "red"
+
+
+def test_config_rejects_wrong_types(tmp_path):
+    config = tmp_path / "bad.toml"
+    config.write_text('[tool.svg-cleaner]\nprecision = "3"\n', encoding="utf-8")
+    with pytest.raises(SvgCleanerError, match="precision must be an integer"):
+        load_config_file(config)
+
+
 def test_style_to_attributes_and_defaults():
     root = load_svg(
         f"""<svg xmlns="{SVG}">
@@ -143,6 +183,20 @@ def test_cleanup_ids_shortens_and_rewrites_references():
     assert gradient is not clip
 
 
+def test_smil_timing_references_keep_their_ids():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><rect id="target" width="1" height="1"/>'
+        '<rect width="2" height="2"><animate attributeName="x" begin="target.click; 2s" '
+        'dur="1s"/></rect></svg>'
+    )
+    assert "target" in ids.referenced_ids(root)
+    ids.cleanup_ids(root, context())
+    renamed = find(root, "rect", width="1").get("id")
+    assert renamed is not None
+    # shortening must rewrite the timing reference as well
+    assert find(root, "animate").get("begin") == f"{renamed}.click; 2s"
+
+
 def test_cleanup_ids_bails_out_when_a_stylesheet_remains():
     root = load_svg(
         f'<svg xmlns="{SVG}"><style>#longIdentifier{{fill:red}}</style>'
@@ -178,6 +232,16 @@ def test_geometry_rounds_numbers_and_drops_identity_transforms():
     assert find(root, "path").get("stroke-width") == "0.5"  # never collapses to 0
 
 
+def test_precision_never_collapses_viewbox_or_dashes_to_zero():
+    root = load_svg(
+        f'<svg xmlns="{SVG}" viewBox="0 0 0.0004 10">'
+        '<path d="M0 0 L1 1" stroke-dasharray="0.0004 2"/></svg>'
+    )
+    geometry.simplify_geometry(root, context(precision=2))
+    assert root.get("viewBox") == "0 0 0.0004 10"
+    assert find(root, "path").get("stroke-dasharray") == "0.0004 2"
+
+
 def test_path_mode_relative_rewrites_commands():
     root = load_svg(
         f'<svg xmlns="{SVG}"><path d="M 0 0 L 10 10 L 20 0"/></svg>'
@@ -204,6 +268,16 @@ def test_visibility_removes_hidden_elements_and_unused_definitions():
     assert len([element for element in root.iter() if localname(element) == "rect"]) == 1
     assert find(root, "linearGradient", id="used") is not None
     assert not [element for element in root.iter() if localname(element) == "circle"]
+
+
+def test_visibility_hidden_group_with_a_visible_child_is_kept():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><g visibility="hidden">'
+        '<text visibility="visible">still here</text></g></svg>'
+    )
+    visibility.cleanup_visibility(root, context())
+    assert find(root, "g") is not None
+    assert find(root, "text").text == "still here"
 
 
 def test_hidden_elements_with_ids_are_kept():

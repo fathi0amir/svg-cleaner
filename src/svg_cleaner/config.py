@@ -18,6 +18,40 @@ PROFILES = ("auto", "generic", "bokeh", "mermaid")
 PATH_MODES = ("keep", "absolute", "relative")
 CLUSTER_ALIGNS = ("left", "center", "right")
 
+BOOL_FIELDS = (
+    "pretty",
+    "xml_declaration",
+    "strict",
+    "remove_comments",
+    "remove_metadata",
+    "remove_editor_data",
+    "collapse_groups",
+    "inline_css",
+    "remove_style",
+    "style_to_attributes",
+    "cleanup_ids",
+    "shorten_ids",
+    "remove_unused_ids",
+    "remove_hidden",
+    "trim_clip",
+    "trim_dashed",
+    "drop_clip",
+    "fix_mermaid_labels",
+    "convert_foreign_objects",
+)
+INT_FIELDS = ("precision", "indent")
+NUMBER_FIELDS = (
+    "baseline",
+    "line_height",
+    "font_size",
+    "cluster_font_size",
+    "cluster_pad_top",
+    "cluster_pad_x",
+    "label_dx",
+    "label_dy",
+    "clip_inset",
+)
+
 
 @dataclass
 class CleanConfig:
@@ -83,6 +117,20 @@ class CleanConfig:
     disabled_passes: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
+        for name in BOOL_FIELDS:
+            if not isinstance(getattr(self, name), bool):
+                raise SvgCleanerError(f"{name} must be true or false")
+        for name in INT_FIELDS:
+            if type(getattr(self, name)) is not int:
+                raise SvgCleanerError(f"{name} must be an integer")
+        for name in NUMBER_FIELDS:
+            value = getattr(self, name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+            ):
+                raise SvgCleanerError(f"{name} must be a number")
+        if not isinstance(self.profile, str):
+            raise SvgCleanerError("profile must be a string")
         if self.profile not in PROFILES:
             raise SvgCleanerError(f"unknown profile {self.profile!r}; pick one of {PROFILES}")
         if self.path_mode not in PATH_MODES:

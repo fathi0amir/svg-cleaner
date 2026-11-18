@@ -198,6 +198,19 @@ def test_dashed_strokes_are_trimmed_when_opted_in():
     assert find(root, "path").get("d") == "M 0 5 L 10 5"
 
 
+def test_paths_with_path_length_are_left_alone():
+    root = load_svg(
+        f'<svg xmlns="{SVG}"><clipPath id="c"><rect width="10" height="10"/></clipPath>'
+        '<path d="M -20 5 L 80 5" fill="none" stroke="black" pathLength="100" '
+        'clip-path="url(#c)"/></svg>'
+    )
+    original = find(root, "path").get("d")
+    ctx = context()
+    assert trim_clipped_strokes(root, ctx) == 0
+    assert find(root, "path").get("d") == original
+    assert any("pathLength" in warning for warning in ctx.warnings)
+
+
 def test_no_clip_means_no_work():
     root = load_svg(
         f'<svg xmlns="{SVG}"><path d="M 0 0 L 10 10" fill="none" stroke="black"/></svg>'

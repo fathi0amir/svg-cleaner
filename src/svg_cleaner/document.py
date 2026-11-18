@@ -270,15 +270,6 @@ def atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
-def decode_svg(data: bytes) -> str:
-    """Decode bytes honouring the XML declaration, defaulting to UTF-8."""
-    match = re.match(rb"<\?xml[^>]*encoding=[\"']([A-Za-z0-9._-]+)[\"']", data[:200])
-    encoding = match.group(1).decode("ascii") if match else "utf-8"
-    try:
-        return data.decode(encoding)
-    except (LookupError, UnicodeDecodeError):
-        return data.decode("utf-8", errors="replace")
-
 
 def collect(root: etree._Element, tags: Iterable[str]) -> list[etree._Element]:
     wanted = set(tags)

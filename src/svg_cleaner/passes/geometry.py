@@ -95,12 +95,24 @@ def _round_attribute(value: str, precision: int, protect_zero: bool = False) -> 
     return _round_number(number, precision, protect_zero)
 
 
-def _round_list(value: str, precision: int) -> str:
+def _round_list(value: str, precision: int, protect_zero: bool = False) -> str:
     def replace(match: re.Match[str]) -> str:
-        rounded = _round_number(float(match.group(0)), precision)
+        rounded = _round_number(float(match.group(0)), precision, protect_zero)
         return rounded if rounded is not None else match.group(0)
 
     return _NUMBER.sub(replace, value)
+
+
+def _round_viewbox(value: str, precision: int) -> str:
+    """Round a viewBox, never collapsing its width or height to zero."""
+    tokens = _NUMBER.findall(value)
+    if len(tokens) != 4:
+        return value
+    rounded: list[str] = []
+    for index, token in enumerate(tokens):
+        result = _round_number(float(token), precision, protect_zero=index >= 2)
+        rounded.append(result if result is not None else token)
+    return " ".join(rounded)
 
 
 def _rewrite_path_data(data: str, ctx: PassContext) -> str | None:
@@ -135,7 +147,13 @@ def simplify_geometry(root: etree._Element, ctx: PassContext) -> int:
             value = element.get(name)
             if value is None:
                 continue
-            rounded = _round_list(value, precision)
+            if name == "viewBox":
+                rounded = _round_viewbox(value, precision)
+            elif name == "stroke-dasharray":
+                # a zero-length dash would change the pattern
+                rounded = _round_list(value, precision, protect_zero=True)
+            else:
+                rounded = _round_list(value, precision)
             if rounded != value:
                 element.set(name, rounded)
                 changed += 1

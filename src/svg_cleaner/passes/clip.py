@@ -168,6 +168,15 @@ def _all_points_inside(segments: list, bounds: Bounds) -> bool:
     )
 
 
+def _is_zero(value: str | None) -> bool:
+    if value is None:
+        return False
+    try:
+        return float(value.strip().rstrip("%")) == 0
+    except ValueError:
+        return False
+
+
 def _warn_once(ctx: PassContext, seen: set[str], key: str, message: str) -> None:
     if key in seen:
         return
@@ -204,7 +213,7 @@ def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
         stroke = inherited(path, "stroke")
         if not stroke or stroke.strip().lower() == "none":
             continue
-        if inherited(path, "stroke-opacity") in ("0", "0.0", "0%"):
+        if _is_zero(inherited(path, "stroke-opacity")):
             continue
 
         carrier, clip_id = _clip_carrier(path)
@@ -236,6 +245,15 @@ def trim_clipped_strokes(root: etree._Element, ctx: PassContext) -> int:
                 f"{describe(path)}: markers on clipped strokes, left as is",
             )
             continue
+        if path.get("pathLength"):
+            _warn_once(
+                ctx,
+                seen,
+                "pathlength",
+                f"{describe(path)}: pathLength would be invalidated by trimming, left as is",
+            )
+            continue
+
         dash = inherited(path, "stroke-dasharray")
         if dash and dash.strip().lower() != "none" and not config.trim_dashed:
             _warn_once(

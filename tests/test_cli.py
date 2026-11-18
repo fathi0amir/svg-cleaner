@@ -89,6 +89,22 @@ def test_cli_stdin_to_file(tmp_path, monkeypatch):
     assert target.is_file()
 
 
+def test_stdout_mode_writes_only_the_document(tmp_path, capfd):
+    source = write_svg(tmp_path)
+    assert main([str(source), "-o", "-"]) == 0
+    captured = capfd.readouterr().out
+    assert captured.startswith("<?xml")
+    assert captured.rstrip().endswith("</svg>")
+    assert "->" not in captured
+
+
+def test_cli_rejects_empty_suffix(tmp_path):
+    source = write_svg(tmp_path)
+    with pytest.raises(SystemExit) as info:
+        main([str(source), "--suffix", ""])
+    assert info.value.code == 2
+
+
 def test_cli_list_passes(capsys):
     assert main(["--list-passes"]) == 0
     out = capsys.readouterr().out

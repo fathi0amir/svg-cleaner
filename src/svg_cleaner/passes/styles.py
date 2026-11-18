@@ -185,12 +185,18 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
 
     matches.sort(key=lambda item: (item[0], item[1], item[2]))
     styles: dict[etree._Element, dict[str, str]] = {}
-    for _important, _specificity, _order, element, name, value in matches:
+    importance: dict[etree._Element, dict[str, bool]] = {}
+    for important, _specificity, _order, element, name, value in matches:
         styles.setdefault(element, {})[name] = value
+        importance.setdefault(element, {})[name] = important
 
     for element, properties in styles.items():
-        properties.update(get_style(element))  # an inline style always wins
-        element.set("style", format_style(properties))
+        merged = dict(properties)
+        for name, value in get_style(element).items():
+            # a normal inline declaration loses against a !important rule
+            if not importance.get(element, {}).get(name):
+                merged[name] = value
+        element.set("style", format_style(merged))
 
     if skipped_rules or skipped_values:
         ctx.warn(
@@ -235,15 +241,32 @@ def style_to_attributes(root: etree._Element, ctx: PassContext) -> int:
     return moved
 
 
+def _ancestor_declares(element: etree._Element, name: str) -> bool:
+    """Is *name* set on an ancestor? Inherited properties then need a value."""
+    node = element.getparent()
+    while node is not None:
+        if node.get(name) is not None or name in get_style(node):
+            return True
+        node = node.getparent()
+    return False
+
+
 def drop_default_attributes(root: etree._Element, ctx: PassContext) -> int:
-    """Remove attributes that only restate the SVG initial value."""
+    """Remove attributes that only restate the SVG initial value.
+
+    Most presentation properties are inherited, so ``stroke-width="1"`` on a
+    child is *not* redundant when a group above it sets ``stroke-width="3"``.
+    """
     removed = 0
     for element in iter_elements(root):
         for name, default in DEFAULT_VALUES.items():
             value = element.get(name)
-            if value is not None and value.strip().lower() == default:
-                del element.attrib[name]
-                removed += 1
+            if value is None or value.strip().lower() != default:
+                continue
+            if _ancestor_declares(element, name):
+                continue
+            del element.attrib[name]
+            removed += 1
     return removed
 
 

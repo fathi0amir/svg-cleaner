@@ -6,7 +6,6 @@ from collections.abc import Iterable
 
 from lxml import etree
 
-from ..config import CleanConfig
 from . import clip, geometry, ids, mermaid, structure, styles, visibility
 from .context import Pass, PassContext
 
@@ -103,6 +102,3 @@ def run_passes(
         ctx.add(item.name, count)
     return ctx.counts
 
-
-def context_for(config: CleanConfig, profile: str) -> PassContext:
-    return PassContext(config=config, profile=profile)

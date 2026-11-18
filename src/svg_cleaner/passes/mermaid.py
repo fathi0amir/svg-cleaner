@@ -14,6 +14,17 @@ FONT_SIZE_RE = re.compile(r"font-size:\s*([\d.]+)px")
 HTML_BLOCK_TAGS = {"p", "div", "li"}
 
 
+def _number(value: str | None, default: float = 0.0) -> float:
+    """Parse the numeric part of an attribute; percentages must not crash."""
+    match = re.match(r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?", (value or "").strip())
+    if match is None:
+        return default
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return default
+
+
 def translate_of(element: etree._Element) -> tuple[float, float]:
     match = TRANSLATE_RE.search(element.get("transform") or "")
     if not match:
@@ -120,10 +131,10 @@ def convert_foreign_objects(root: etree._Element, ctx: PassContext, size: float)
             continue
         index = parent.index(foreign_object)
         lines = html_lines(foreign_object)
-        width = float(foreign_object.get("width") or 0)
-        height = float(foreign_object.get("height") or 0)
-        x = float(foreign_object.get("x") or 0)
-        y = float(foreign_object.get("y") or 0)
+        width = _number(foreign_object.get("width"))
+        height = _number(foreign_object.get("height"))
+        x = _number(foreign_object.get("x"))
+        y = _number(foreign_object.get("y"))
         parent.remove(foreign_object)
         if not lines:
             continue
@@ -187,9 +198,9 @@ def place_cluster_labels(root: etree._Element, ctx: PassContext, size: float) ->
         rect = next((child for child in cluster if localname(child) == "rect"), None)
         if rect is None:
             continue
-        rx = float(rect.get("x", 0))
-        ry = float(rect.get("y", 0))
-        width = float(rect.get("width", 0))
+        rx = _number(rect.get("x"))
+        ry = _number(rect.get("y"))
+        width = _number(rect.get("width"))
 
         if config.cluster_align == "left":
             box_x = rx + config.cluster_pad_x

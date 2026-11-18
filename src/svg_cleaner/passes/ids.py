@@ -12,6 +12,8 @@ from ..document import collect, iter_elements
 from .context import PassContext
 
 URL_REFERENCE = re.compile(r"url\(\s*['\"]?#([^'\")\s]+)['\"]?\s*\)")
+#: SMIL timing references such as ``begin="node.click"`` or ``end="a.repeat(2)"``.
+SMIL_REFERENCE = re.compile(r"([A-Za-z_][\w-]*)\.")
 TOKEN_LIST_ATTRIBUTES = {
     "aria-labelledby",
     "aria-describedby",
@@ -50,6 +52,8 @@ def referenced_ids(root: etree._Element) -> set[str]:
                 references.add(value.strip()[1:])
             elif name in TOKEN_LIST_ATTRIBUTES:
                 references.update(token for token in value.split() if token)
+            elif name in ("begin", "end"):
+                references.update(SMIL_REFERENCE.findall(value))
     return references
 
 
@@ -147,16 +151,8 @@ def _rewrite(value: str, key: str, mapping: dict[str, str]) -> str:
     if name in TOKEN_LIST_ATTRIBUTES:
         tokens = [mapping.get(token, token) for token in updated.split()]
         return " ".join(tokens)
+    if name in ("begin", "end"):
+        return SMIL_REFERENCE.sub(
+            lambda match: f"{mapping.get(match.group(1), match.group(1))}.", updated
+        )
     return updated
-
-
-def protect_external_ids(root: etree._Element, ctx: PassContext) -> None:
-    """Warn when ids are referenced from outside the document.
-
-    Embedders often target ids such as ``#plot`` from their own CSS/JS. There
-    is no way to see those references, so ids whose name looks like an entry
-    point are kept rather than shortened.
-    """
-    root_id: str | None = root.get("id")
-    if root_id:
-        ctx.warn("ids", f"kept root id #{root_id} (may be referenced from the page)")

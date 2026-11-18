@@ -40,6 +40,40 @@ def _inside_definitions(element: etree._Element) -> bool:
     return False
 
 
+ANIMATION_TAGS = {"animate", "animateTransform", "animateMotion", "set"}
+
+
+def _has_animation(element: etree._Element) -> bool:
+    return any(
+        isinstance(child.tag, str) and localname(child) in ANIMATION_TAGS
+        for child in element.iterdescendants()
+    )
+
+
+def _hidden_only_by_visibility(element: etree._Element) -> bool:
+    display = element.get("display") or get_style(element).get("display")
+    if display and display.strip().lower() == "none":
+        return False
+    opacity = element.get("opacity") or get_style(element).get("opacity")
+    try:
+        if opacity is not None and float(opacity) == 0:
+            return False
+    except ValueError:
+        pass
+    return True
+
+
+def _visibility_reenabled(element: etree._Element) -> bool:
+    """A descendant may override an inherited ``visibility: hidden``."""
+    for descendant in element.iterdescendants():
+        if not isinstance(descendant.tag, str):
+            continue
+        value = descendant.get("visibility") or get_style(descendant).get("visibility")
+        if value and value.strip().lower() == "visible":
+            return True
+    return False
+
+
 def _is_hidden(element: etree._Element) -> bool:
     display = element.get("display") or get_style(element).get("display")
     if display and display.strip().lower() == "none":
@@ -64,6 +98,10 @@ def remove_hidden(root: etree._Element, ctx: PassContext) -> int:
         if element.getparent() is None or element.get("id"):
             continue
         if _inside_definitions(element) or not _is_hidden(element):
+            continue
+        if _has_animation(element):
+            continue
+        if _hidden_only_by_visibility(element) and _visibility_reenabled(element):
             continue
         parent = element.getparent()
         if parent is not None:

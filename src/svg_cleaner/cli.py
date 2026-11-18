@@ -266,9 +266,12 @@ def _report(source: str, destination: str, result: CleanResult, args: argparse.N
     percent = (after - before) / before * 100 if before else 0.0
     target = "<stdout>" if destination == "-" else destination
     suffix = " (dry run)" if args.dry_run else ""
+    # never write the summary into the SVG stream when -o - is used
+    stream = sys.stderr if destination == "-" else sys.stdout
     print(
         f"{_label(source)} -> {target}  {_human(before)} -> {_human(after)} "
-        f"({percent:+.1f}%){suffix}"
+        f"({percent:+.1f}%){suffix}",
+        file=stream,
     )
     if args.verbose:
         passes = ", ".join(f"{name}={count}" for name, count in result.stats["passes"].items())
@@ -304,6 +307,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--inplace cannot be used with stdin")
     if len(raw_inputs) > 1 and args.output == "-":
         parser.error("cannot write several files to stdout")
+    if not args.suffix:
+        parser.error("--suffix must not be empty")
 
     try:
         sources = _expand(raw_inputs, args.recursive)
