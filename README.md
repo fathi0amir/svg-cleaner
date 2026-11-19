@@ -32,9 +32,9 @@ install from a checkout (see below).
 ## Install
 
 ```bash
-uv tool install --from . svg-cleaner     # from a checkout
+uv tool install --from git+https://github.com/fathi0amir/svg-cleaner svg-cleaner     # from a checkout
 uv tool install --editable .             # editable, for hacking on it
-uvx --from . svg-cleaner plot.svg        # run without installing
+uvx --from git+https://github.com/fathi0amir/svg-cleaner svg-cleaner svg-cleaner plot.svg        # run without installing
 ```
 
 Or add it to a project with `uv add --editable .` and import it (see the
@@ -320,7 +320,8 @@ This tool would not exist without these projects:
   CLI shape (optimise, lint, stream stdin → stdout) and its plugin parity goals
   were the model for the command-line interface.
 * [graphics-to-clipboard](https://github.com/fathi0amir/graphics-to-clipboard) —
-  the author's own small tool; its uv packaging, `uv tool install` instructions
+  My own small tool to copy svg or image files to clipboard form jupyternotebook
+  or commandline; its uv packaging, `uv tool install` instructions
   and the "library first, thin CLI on top" split are mirrored here.
 
 The Bokeh clip-trimming and mermaid repair passes are ports of scripts written
@@ -329,8 +330,8 @@ were used to validate the ports.
 
 ## AI disclosure
 
-The code, tests and documentation were produced with an AI coding assistant
-(Freebuff / Codebuff) working from a reviewed plan and validated against real
+The code, tests and documentation were produced with AI coding assistant
+(Freebuff / Codebuff) and GitHub Copilot working from a reviewed plan and validated against real
 Bokeh and mermaid exports. The test suite and the commit history are the record
 of that work. `svg-cleaner` does not call any AI service at runtime and makes no
 network requests; review the code and try it on a copy of your own files before
