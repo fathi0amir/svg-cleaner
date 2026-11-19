@@ -54,12 +54,11 @@ def first_row(text):
     return next(child for child in text if localname(child) == "tspan")
 
 
-def test_css_is_inlined_before_labels_are_placed():
+def test_css_is_inlined_despite_mermaid_keyframes_and_then_removed():
     root = load_svg(FLOWCHART)
     ctx = context()
-    # The keyframes require the complete stylesheet to remain unchanged.
-    assert styles.inline_css(root, ctx) == 0
-    assert [element for element in root.iter() if localname(element) == "style"]
+    assert styles.inline_css(root, ctx) == 3
+    assert not [element for element in root.iter() if localname(element) == "style"]
     node_rect = next(
         element
         for element in root.iter()
@@ -67,8 +66,32 @@ def test_css_is_inlined_before_labels_are_placed():
         and localname(element) == "rect"
         and element.getparent().get("class") == "node"
     )
-    assert node_rect.get("style") is None
+    assert node_rect.get("style") == "fill: #ececff; stroke: #9370db"
     assert node_rect.getparent().get("class") == "node"
+
+
+def test_mermaid_inlining_drops_unsupported_css_without_keeping_stylesheet():
+    root = load_svg(
+        f"""<svg xmlns="{SVG}" id="mermaid-css"><style>
+          @keyframes dash {{ from {{ stroke-dashoffset: 1; }} }}
+          :root {{ --theme-fill: red; }}
+          #mermaid-css .node rect {{
+            fill: blue !important;
+            animation: dash 1s;
+            color: var(--missing);
+          }}
+        </style><g class="node"><rect width="10" height="10"/></g></svg>"""
+    )
+    ctx = context()
+    assert styles.inline_css(root, ctx) == 1
+    rect = next(
+        element
+        for element in root.iter()
+        if localname(element) == "rect"
+    )
+    assert rect.get("style") == "fill: blue"
+    assert not [element for element in root.iter() if localname(element) == "style"]
+    assert not ctx.warnings
 
 
 def test_labels_are_centered_on_their_node_and_cluster_title_moves_to_the_top():

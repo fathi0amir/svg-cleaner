@@ -33,7 +33,10 @@ def test_bokeh_fixture_is_detected_and_trimmed():
 def test_mermaid_fixture_is_detected_and_repaired():
     result = clean_file(FIXTURES / "mermaid_flow.svg", config=CleanConfig(profile="auto"))
     assert result.profile == "mermaid"
+    assert "<style" not in result.svg
     assert "<foreignObject" not in result.svg
+    assert 'fill="#ececff"' in result.svg
+    assert 'stroke="#9370db"' in result.svg
     assert result.stats["passes"]["mermaid"] > 0
 
 

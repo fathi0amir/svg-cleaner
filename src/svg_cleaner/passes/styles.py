@@ -135,8 +135,9 @@ def _mirror(root: etree._Element) -> tuple[etree._Element, dict[etree._Element, 
 
 
 def inline_css(root: etree._Element, ctx: PassContext) -> int:
-    """Resolve every stylesheet rule onto the matching elements."""
+    """Resolve stylesheet rules, tolerating generated CSS for Mermaid."""
     config = ctx.config
+    discard_unsupported = ctx.profile == "mermaid"
     if collect(root, ["script"]) or any(
         any(name.split("}", 1)[-1].lower().startswith("on") for name in element.attrib)
         for element in iter_elements(root)
@@ -216,7 +217,7 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
         styles.setdefault(element, {})[name] = value
         importance.setdefault(element, {})[name] = important
 
-    if skipped_rules or skipped_values:
+    if (skipped_rules or skipped_values) and not discard_unsupported:
         ctx.warn(
             "styles",
             f"unsupported {skipped_rules} rule(s) and {skipped_values} declaration(s); "
@@ -241,15 +242,21 @@ def inline_css(root: etree._Element, ctx: PassContext) -> int:
             ):
                 continue
             merged[name] = (
-                f"{value} !important" if stylesheet_important else value
+                f"{value} !important"
+                if stylesheet_important and not discard_unsupported
+                else value
             )
+        if discard_unsupported:
+            # Mermaid emits !important declarations for its browser theme, but
+            # Inkscape's parser can reject the whole declaration.
+            merged = {name: css_value(value) for name, value in merged.items()}
         if merged:
             element.set("style", format_style(merged))
         else:
             element.attrib.pop("style", None)
 
     if config.remove_style:
-        if styles or not qualified_rules:
+        if discard_unsupported or styles or not qualified_rules:
             for style in collect(root, ["style"]):
                 style.getparent().remove(style)
         else:

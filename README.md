@@ -20,8 +20,9 @@ install from a checkout (see below).
 ## What it does
 
 * strips comments, `<metadata>` and editor-specific elements/attributes
-* inlines fully representable `<style>` rules with the real CSS cascade;
-  unsupported stylesheets are preserved unchanged
+* inlines `<style>` rules with the real CSS cascade; unsupported stylesheets
+  are preserved unchanged, except the Mermaid profile deliberately drops
+  unsupported generated CSS after applying every representable declaration
 * shortens ids, removes unused definitions and rewrites every reference
 * rounds coordinates and path data to a chosen precision
 * trims stroked paths against rectangular `clipPath`s (Bokeh exports)
@@ -219,7 +220,7 @@ The pipeline runs in this order and every pass is idempotent:
 | Pass | What it does |
 | --- | --- |
 | `structure` | comments, `<metadata>`, editor namespaces/attributes, empty groups |
-| `styles` | inlines fully representable `<style>` blocks with the real cascade and otherwise preserves the block |
+| `styles` | inlines `<style>` blocks with the real cascade; the Mermaid profile drops unsupported generated CSS |
 | `style-attributes` | moves presentation properties to attributes, drops initial values where inheritance allows |
 | `mermaid` | `foreignObject` → `<text>`, node/edge label centring, subgraph title placement |
 | `clip` | trims unfilled strokes against rectangular clip paths |
